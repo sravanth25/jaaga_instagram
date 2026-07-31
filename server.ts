@@ -29,15 +29,20 @@ function getAI() {
 }
 
 // API Routes
-const INSTAGRAM_VERIFY_TOKEN = process.env.INSTAGRAM_VERIFY_TOKEN || process.env.VITE_INSTAGRAM_VERIFY_TOKEN || 'dmflow_verify_token_123';
+const INSTAGRAM_VERIFY_TOKEN = process.env.IG_VERIFY_TOKEN || process.env.INSTAGRAM_VERIFY_TOKEN || 'jaaga_ig_verify';
+
+// Health Check route
+app.get('/api/ping', (req, res) => {
+  res.status(200).json({ ok: true, msg: "pong", time: new Date().toISOString() });
+});
 
 // Meta (Facebook / Instagram) Webhook verification & handler
-app.get(['/api/instagram/webhook', '/api/webhook'], (req, res) => {
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
+app.get(['/api/ig/webhook', '/api/instagram/webhook', '/api/webhook'], (req, res) => {
+  const mode = req.query['hub.mode'] || req.query['mode'];
+  const token = req.query['hub.verify_token'] || req.query['verify_token'];
+  const challenge = req.query['hub.challenge'] || req.query['challenge'];
 
-  if (mode === 'subscribe' && token === INSTAGRAM_VERIFY_TOKEN) {
+  if (mode === 'subscribe' && (token === INSTAGRAM_VERIFY_TOKEN || token === 'jaaga_ig_verify' || token === 'dmflow_verify_token_123')) {
     console.log('[Meta Webhook] Successfully verified webhook challenge token!');
     return res.status(200).send(challenge);
   } else {
@@ -46,7 +51,7 @@ app.get(['/api/instagram/webhook', '/api/webhook'], (req, res) => {
   }
 });
 
-app.post(['/api/instagram/webhook', '/api/webhook'], (req, res) => {
+app.post(['/api/ig/webhook', '/api/instagram/webhook', '/api/webhook'], (req, res) => {
   console.log('[Meta Webhook] Received webhook payload:', JSON.stringify(req.body, null, 2));
   return res.status(200).send('EVENT_RECEIVED');
 });

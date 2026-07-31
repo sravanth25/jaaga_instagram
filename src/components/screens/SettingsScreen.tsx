@@ -178,31 +178,52 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   Meta Developer Portal Webhook Credentials
                 </span>
                 <span className="text-[10px] bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 font-bold px-2 py-0.5 rounded-full">
-                  Live Endpoint Ready
+                  Production Vercel Function
                 </span>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-0.5">
-                    1. Callback URL
-                  </label>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">
+                      1. Vercel Production Callback URL
+                    </label>
+                    <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                      Paste into Meta Dashboard
+                    </span>
+                  </div>
                   <input
                     type="text"
                     readOnly
-                    value={`${typeof window !== 'undefined' ? window.location.origin : 'https://your-app-domain'}/api/instagram/webhook`}
-                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-xs text-purple-700 dark:text-purple-300 font-bold focus:outline-none select-all"
+                    value="https://jaaga-instagram.vercel.app/api/ig/webhook"
+                    className="w-full bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 rounded-lg px-2.5 py-1.5 font-mono text-xs text-purple-700 dark:text-purple-300 font-bold focus:outline-none select-all shadow-xs"
                   />
                 </div>
+
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-0.5">
-                    2. Verify Token
-                  </label>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">
+                      2. Verify Token
+                    </label>
+                    <span className="text-[10px] font-semibold text-slate-500">
+                      Set as IG_VERIFY_TOKEN
+                    </span>
+                  </div>
                   <input
                     type="text"
                     readOnly
-                    value="dmflow_verify_token_123"
+                    value="jaaga_ig_verify"
                     className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-xs text-slate-800 dark:text-slate-200 font-bold focus:outline-none select-all"
                   />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Accepts <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded font-mono font-bold">jaaga_ig_verify</code> or <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded font-mono font-bold">dmflow_verify_token_123</code>.
+                  </p>
+                </div>
+
+                <div className="pt-1 border-t border-purple-100 dark:border-purple-900/40">
+                  <p className="text-[10px] text-slate-500">
+                    <span className="font-bold text-slate-700 dark:text-slate-300">Health Check Endpoint:</span>{' '}
+                    <code className="text-purple-600 dark:text-purple-400 font-mono">https://jaaga-instagram.vercel.app/api/ping</code>
+                  </p>
                 </div>
               </div>
             </div>
