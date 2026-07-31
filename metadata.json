@@ -1,0 +1,6 @@
+{
+  "name": "DMFlow",
+  "description": "Instagram DM & Comment Automation SaaS Platform for Creators and Businesses",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
