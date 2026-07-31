@@ -166,9 +166,7 @@ export interface AppSettings {
   }>;
   plan: {
     name: string;
-    price: string;
     usedDMs: number;
     limitDMs: number;
-    renewalDate: string;
   };
 }

@@ -554,10 +554,8 @@ export const INITIAL_APP_SETTINGS: AppSettings = {
     },
   ],
   plan: {
-    name: 'Creator Pro',
-    price: '$49/mo',
+    name: 'Internal Team Workspace',
     usedDMs: 4820,
     limitDMs: 10000,
-    renewalDate: '2026-08-15',
   },
 };

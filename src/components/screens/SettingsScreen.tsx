@@ -307,18 +307,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Team & Billing */}
+        {/* Right Column: Team & Platform Limits */}
         <div className="lg:col-span-5 space-y-6">
-          {/* Plan & Usage Card */}
+          {/* Internal Usage & Capacity Card */}
           <div className="bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 text-white p-6 rounded-2xl border border-purple-900/60 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-pink-400">
-                  Subscription Plan
+                  Platform Capacity & Usage
                 </span>
                 <h3 className="text-xl font-black mt-0.5">{appSettings.plan.name}</h3>
               </div>
-              <span className="text-lg font-bold text-amber-400">{appSettings.plan.price}</span>
             </div>
 
             <div className="space-y-1.5">
@@ -335,10 +334,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 />
               </div>
             </div>
-
-            <button className="w-full bg-gradient-to-r from-pink-500 to-amber-500 hover:opacity-95 text-white py-2 rounded-xl text-xs font-bold shadow-md cursor-pointer">
-              Upgrade to Scale Plan (25,000 DMs)
-            </button>
           </div>
 
           {/* Team Members List */}
