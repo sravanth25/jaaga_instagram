@@ -13,6 +13,7 @@ const procEnv = typeof process !== 'undefined' ? process.env || {} : {};
 export const INSTAGRAM_CONFIG = {
   appId: metaEnv.VITE_INSTAGRAM_APP_ID || procEnv.INSTAGRAM_APP_ID || '2878864779136148',
   accountId: metaEnv.VITE_INSTAGRAM_ACCOUNT_ID || procEnv.INSTAGRAM_ACCOUNT_ID || '17841462404931884',
+  apiVersion: metaEnv.VITE_INSTAGRAM_GRAPH_VERSION || procEnv.INSTAGRAM_GRAPH_VERSION || 'v26.0',
   // Treat token as write-only/secret on client
   hasToken: Boolean(metaEnv.VITE_INSTAGRAM_ACCESS_TOKEN || procEnv.INSTAGRAM_ACCESS_TOKEN || true),
 };

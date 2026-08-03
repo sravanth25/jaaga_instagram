@@ -175,11 +175,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </button>
             </div>
 
-            {/* Read-only App ID & Account ID fields */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+            {/* Read-only App ID, Account ID, and Graph API Version fields */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
               <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700">
                 <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                  INSTAGRAM_APP_ID (Read-only)
+                  INSTAGRAM_APP_ID
                 </label>
                 <input
                   type="text"
@@ -191,7 +191,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
               <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700">
                 <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                  INSTAGRAM_ACCOUNT_ID (Read-only)
+                  INSTAGRAM_ACCOUNT_ID
                 </label>
                 <input
                   type="text"
@@ -199,6 +199,20 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   value={INSTAGRAM_CONFIG.accountId}
                   className="w-full bg-transparent font-mono text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
                 />
+              </div>
+
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700">
+                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                  GRAPH API VERSION
+                </label>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xs font-bold text-purple-600 dark:text-purple-400">
+                    {INSTAGRAM_CONFIG.apiVersion}
+                  </span>
+                  <span className="text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-900/80 dark:text-purple-300 px-1.5 py-0.5 rounded">
+                    Latest Meta v26.0
+                  </span>
+                </div>
               </div>
             </div>
 
