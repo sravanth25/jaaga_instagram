@@ -87,9 +87,15 @@ export default function App() {
   const [aiSettings, setAiSettings] = useState<AiSettings>(INITIAL_AI_SETTINGS);
   const [appSettings, setAppSettings] = useState<AppSettings>(INITIAL_APP_SETTINGS);
 
-  // Sync to local persistence on change
+  // Sync to local persistence & backend memory on change
   useEffect(() => {
     localStorage.setItem('dmflow_automations', JSON.stringify(automations));
+    // Sync to backend rule engine
+    fetch('/api/ig/sync-automations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ automations }),
+    }).catch(() => {});
   }, [automations]);
 
   useEffect(() => {

@@ -38,8 +38,65 @@ const recentWebhookEvents: Array<{
   senderId: string;
   messageText: string;
   replyText?: string;
+  matchedAutomation?: string;
   apiResult?: any;
 }> = [];
+
+// In-memory automations store
+let syncedAutomations: any[] = [
+  {
+    id: 'auto_default_lead',
+    title: 'New Comment-to-DM Lead Magnet',
+    status: 'live',
+    keywords: ['CHECKLIST', 'LINK', 'UI', 'PRICE', 'INFO', 'DEMO', 'HI', 'HELLO'],
+    matchRule: 'contains',
+    dmMessageText: 'Hey there! 👋 Thanks for messaging JaaGa! Here is your requested access link:\nhttps://www.jaaga.ai',
+    dmButtons: [
+      { id: 'b1', type: 'link', label: '📥 Download Free Guide', url: 'https://www.jaaga.ai' },
+      { id: 'b2', type: 'quick_reply', label: '💡 Ask AI Assistant' },
+    ],
+    publicCommentReplies: ['Sent you a DM with the link! 📥', 'Check your inbox! 🚀'],
+  },
+];
+
+function evaluateAutomations(messageText: string) {
+  const cleanMsg = (messageText || '').trim().toLowerCase();
+
+  for (const rule of syncedAutomations) {
+    if (rule.status !== 'live' && rule.status !== true && rule.status !== 'active') continue;
+
+    const keywords = Array.isArray(rule.keywords) ? rule.keywords : [];
+    const matchRule = rule.matchRule || rule.match_rule || 'contains';
+
+    for (const kw of keywords) {
+      const cleanKw = String(kw).trim().toLowerCase();
+      if (!cleanKw) continue;
+
+      let matched = false;
+      if (matchRule === 'exact') {
+        matched = cleanMsg === cleanKw;
+      } else if (matchRule === 'starts_with') {
+        matched = cleanMsg.startsWith(cleanKw);
+      } else {
+        // contains
+        matched = cleanMsg.includes(cleanKw);
+      }
+
+      if (matched) {
+        return {
+          matched: true,
+          automation: rule,
+          matchedKeyword: kw,
+          replyText: rule.dmMessageText || rule.dm_message_text || 'Thanks for reaching out!',
+          buttons: rule.dmButtons || rule.dm_buttons || [],
+          publicCommentReplies: rule.publicCommentReplies || rule.public_comment_replies || [],
+        };
+      }
+    }
+  }
+
+  return { matched: false };
+}
 
 // Helper function to dispatch Direct Messages to Instagram Graph API v25.0
 async function sendInstagramDM({
@@ -213,6 +270,7 @@ app.post(['/api/ig/webhook', '/api/instagram/webhook', '/api/webhook'], async (r
     if (body && (body.object === 'instagram' || body.object === 'page')) {
       const entries = body.entry || [];
       for (const entry of entries) {
+        // Handle Direct Messaging Events
         if (Array.isArray(entry.messaging)) {
           for (const messagingEvent of entry.messaging) {
             const senderId = messagingEvent.sender?.id;
@@ -221,28 +279,42 @@ app.post(['/api/ig/webhook', '/api/instagram/webhook', '/api/webhook'], async (r
             const isEcho = messagingEvent.message?.is_echo;
 
             if (messageText && !isEcho && senderId) {
-              console.log(`[Meta Webhook] Incoming message from ${senderId}: "${messageText}"`);
+              console.log(`[Meta Webhook] Incoming DM from ${senderId}: "${messageText}"`);
 
-              // Generate AI response via Gemini
+              // 1. Evaluate Automations Engine
+              const evalResult = evaluateAutomations(messageText);
               let replyText = '';
-              try {
-                const ai = getAI();
-                const prompt = `You are JaaGa AI Instagram Assistant for account 17841462404931884.
+              let buttons: any[] = [];
+              let matchedRuleTitle = '';
+
+              if (evalResult.matched) {
+                console.log(`[Meta Webhook] Matched Automation Flow: "${evalResult.automation.title}" for keyword "${evalResult.matchedKeyword}"`);
+                replyText = evalResult.replyText;
+                buttons = evalResult.buttons;
+                matchedRuleTitle = evalResult.automation.title;
+              } else {
+                // 2. Fallback to Gemini AI
+                matchedRuleTitle = 'Gemini AI Fallback';
+                try {
+                  const ai = getAI();
+                  const prompt = `You are JaaGa AI Instagram Assistant for account 17841462404931884.
 The user sent: "${messageText}".
 Generate a helpful, friendly, concise response (max 2-3 sentences, with emojis) answering their query or welcoming them to JaaGa AI services.`;
-                const response = await ai.models.generateContent({
-                  model: 'gemini-3.6-flash',
-                  contents: prompt,
-                });
-                replyText = response.text?.replace(/\*/g, '').trim() || "Thanks for messaging JaaGa! Visit https://www.jaaga.ai or reply with your query 🚀";
-              } catch (aiErr) {
-                replyText = "Hello! Thanks for reaching out to JaaGa on Instagram! How can we help you today? 🚀";
+                  const response = await ai.models.generateContent({
+                    model: 'gemini-3.6-flash',
+                    contents: prompt,
+                  });
+                  replyText = response.text?.replace(/\*/g, '').trim() || "Thanks for messaging JaaGa! Visit https://www.jaaga.ai or reply with your query 🚀";
+                } catch (aiErr) {
+                  replyText = "Hello! Thanks for reaching out to JaaGa on Instagram! How can we help you today? 🚀";
+                }
               }
 
-              // Send response back via Instagram Graph API v25.0
+              // 3. Send Direct Message back via Meta Instagram Graph API
               const apiRes = await sendInstagramDM({
                 recipientId: senderId,
                 text: replyText,
+                buttons: buttons.length > 0 ? buttons : undefined,
                 accountId: recipientId || '17841462404931884',
               });
 
@@ -252,9 +324,36 @@ Generate a helpful, friendly, concise response (max 2-3 sentences, with emojis) 
                 senderId,
                 messageText,
                 replyText,
+                matchedAutomation: matchedRuleTitle,
                 apiResult: apiRes,
               });
               if (recentWebhookEvents.length > 50) recentWebhookEvents.pop();
+            }
+          }
+        }
+
+        // Handle Post Comments Events
+        if (Array.isArray(entry.changes)) {
+          for (const change of entry.changes) {
+            const field = change.field;
+            const value = change.value;
+            console.log(`[Meta Webhook Comment Event] Field: ${field}`, JSON.stringify(value, null, 2));
+
+            if (field === 'comments' && value && value.text) {
+              const commentId = value.id;
+              const commentText = value.text;
+              const commenterId = value.from?.id;
+              console.log(`[Comment Event] Comment from ${commenterId}: "${commentText}"`);
+
+              const evalResult = evaluateAutomations(commentText);
+              if (evalResult.matched && commenterId) {
+                console.log(`[Comment Auto-DM Triggered] Flow: "${evalResult.automation.title}"`);
+                await sendInstagramDM({
+                  recipientId: commenterId,
+                  text: evalResult.replyText,
+                  buttons: evalResult.buttons,
+                });
+              }
             }
           }
         }
@@ -265,6 +364,88 @@ Generate a helpful, friendly, concise response (max 2-3 sentences, with emojis) 
   }
 
   return res.status(200).send('EVENT_RECEIVED');
+});
+
+// Endpoint to sync client-side automations into server memory
+app.post('/api/ig/sync-automations', (req, res) => {
+  const { automations } = req.body || {};
+  if (Array.isArray(automations) && automations.length > 0) {
+    syncedAutomations = automations;
+    console.log(`[Automations Sync] Updated server memory with ${syncedAutomations.length} active automations.`);
+  }
+  return res.json({ success: true, count: syncedAutomations.length, automations: syncedAutomations });
+});
+
+// Endpoint to test an automation against a test message
+app.post('/api/ig/test-automation', async (req, res) => {
+  try {
+    const { messageText, recipientId, testRuleId } = req.body || {};
+    const textToTest = (messageText || 'CHECKLIST').trim();
+
+    let evalResult = evaluateAutomations(textToTest);
+    if (!evalResult.matched && testRuleId) {
+      const specificRule = syncedAutomations.find((a) => a.id === testRuleId);
+      if (specificRule) {
+        evalResult = {
+          matched: true,
+          automation: specificRule,
+          matchedKeyword: specificRule.keywords?.[0] || 'TEST',
+          replyText: specificRule.dmMessageText || 'Test automation reply text.',
+          buttons: specificRule.dmButtons || [],
+          publicCommentReplies: specificRule.publicCommentReplies || [],
+        };
+      }
+    }
+
+    let replyText = '';
+    let buttons: any[] = [];
+    let matchedAutomationName = '';
+
+    if (evalResult.matched) {
+      replyText = evalResult.replyText;
+      buttons = evalResult.buttons;
+      matchedAutomationName = evalResult.automation.title;
+    } else {
+      matchedAutomationName = 'Gemini AI Assistant (Fallback)';
+      try {
+        const ai = getAI();
+        const prompt = `You are JaaGa AI Instagram Assistant. The user messaged: "${textToTest}". Generate a 2-sentence friendly reply with emojis.`;
+        const resp = await ai.models.generateContent({ model: 'gemini-3.6-flash', contents: prompt });
+        replyText = resp.text?.replace(/\*/g, '').trim() || 'Thanks for reaching out to JaaGa AI!';
+      } catch (err) {
+        replyText = 'Hello! Thanks for reaching out to JaaGa on Instagram! 🚀';
+      }
+    }
+
+    let apiResult = null;
+    let hint = '';
+
+    if (recipientId) {
+      if (recipientId === '17841462404931884') {
+        hint = '⚠️ Meta Graph API Error 2534014: Cannot send DM to your own Instagram Account ID (17841462404931884). Recipient must be a customer\'s scoped IGSID from an incoming message event.';
+      } else {
+        apiResult = await sendInstagramDM({
+          recipientId,
+          text: replyText,
+          buttons: buttons.length > 0 ? buttons : undefined,
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      testedInput: textToTest,
+      matched: evalResult.matched,
+      matchedAutomationName,
+      replyText,
+      buttons,
+      recipientId: recipientId || 'None (Simulation Mode)',
+      apiResult,
+      hint,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 app.post(['/api/ig/ai-test', '/api/gemini/ai-test-chat'], async (req, res) => {
   try {

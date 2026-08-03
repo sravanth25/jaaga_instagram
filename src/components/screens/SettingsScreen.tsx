@@ -412,8 +412,13 @@ CREATE POLICY "Allow public insert/update ig_settings" ON public.ig_settings FOR
                     <span className="font-bold text-slate-700 dark:text-slate-300">Health Check Endpoint:</span>{' '}
                     <code className="text-purple-600 dark:text-purple-400 font-mono">https://jaaga-instagram.vercel.app/api/ping</code>
                   </p>
-                  <div className="p-2.5 bg-purple-100/70 dark:bg-purple-900/40 rounded-lg text-[11px] text-purple-950 dark:text-purple-200 leading-normal">
-                    <span className="font-bold">⚡ Meta App Mode Notice:</span> If your Meta App is in <em>Development Mode</em>, Meta only delivers webhook events for DMs from accounts added as <strong>App Admins/Testers</strong> in Meta Developer Portal. In <em>Live / Published Mode</em>, Meta delivers DMs from <strong>all public Instagram accounts</strong>.
+                  <div className="p-2.5 bg-purple-100/70 dark:bg-purple-900/40 rounded-lg text-[11px] text-purple-950 dark:text-purple-200 leading-normal space-y-1.5">
+                    <p>
+                      <span className="font-bold">⚡ Meta App Mode Status (Live):</span> Since your Meta App is in <strong>Published / Live Mode</strong>, you do <u>NOT</u> need to add personal accounts under Roles / Testers. DMs from all public Instagram accounts are eligible for webhooks.
+                    </p>
+                    <p className="text-[10px] text-purple-900 dark:text-purple-300 font-semibold border-t border-purple-200 dark:border-purple-800/60 pt-1.5">
+                      📱 <strong>Required Instagram Phone App Setting:</strong> Open Instagram on your phone → Settings & privacy → Messages and story replies → Message controls → Enable <strong>&quot;Allow access to messages&quot;</strong>. (If this is turned off, Meta blocks webhook delivery).
+                    </p>
                   </div>
                 </div>
               </div>
