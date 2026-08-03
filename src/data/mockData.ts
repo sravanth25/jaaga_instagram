@@ -167,7 +167,7 @@ export const INITIAL_APP_SETTINGS: AppSettings = {
   ],
   plan: {
     name: 'JaaGa Instagram Workspace',
-    usedDMs: 4820,
+    usedDMs: 0,
     limitDMs: 10000,
   },
 };

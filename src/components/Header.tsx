@@ -26,7 +26,7 @@ const SCREEN_TITLES: Record<ScreenType, { title: string; subtitle: string }> = {
   inbox: { title: 'Unified Inbox', subtitle: 'Manage Instagram DM threads with automated or human takeover' },
   'ai-assistant': { title: 'AI Assistant', subtitle: 'Train an intelligent Instagram DM agent with custom FAQ knowledge base' },
   contacts: { title: 'Contacts & Leads CRM', subtitle: 'Manage, tag, and export captured lead emails & phone numbers' },
-  broadcasts: { title: 'Broadcast DMs', subtitle: 'Send targeted message campaigns to opted-in Instagram followers' },
+  broadcasts: { title: 'Broadcast DMs', subtitle: 'Send targeted message campaigns to active contacts within Meta 24h window' },
   analytics: { title: 'Analytics & Funnel', subtitle: 'Track comment-to-DM conversions, click rates & top keywords' },
   settings: { title: 'Account Settings', subtitle: 'Instagram API connection, rate limits, quiet hours & team access' },
 };

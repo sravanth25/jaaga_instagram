@@ -56,6 +56,8 @@ export interface Automation {
     dmsSent: number;
     leadsCaptured: number;
     ctrPercent: number;
+    opened?: number;
+    clicked?: number;
   };
   createdAt: string;
   updatedAt: string;
@@ -131,17 +133,20 @@ export interface Broadcast {
   title: string;
   body: string;
   buttons: DMButton[];
-  audienceSegment: 'All Leads' | 'VIP Leads' | 'UI Checklist Buyers' | 'Figma Kit Leads' | 'Inbound Inquiries';
+  audienceSegment: string;
   scheduleType: 'now' | 'scheduled';
   scheduledFor?: string;
-  status: 'sent' | 'scheduled' | 'draft';
+  status: 'sent' | 'scheduled' | 'draft' | 'failed';
   stats: {
     targetUsers: number;
     sent: number;
-    delivered: number;
-    opened: number;
-    clicked: number;
+    failed?: number;
+    delivered?: number;
+    opened?: number;
+    clicked?: number;
   };
+  errorMessage?: string;
+  note?: string;
   createdAt: string;
 }
 

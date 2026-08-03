@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
+import broadcastHandler from './api/instagram/broadcast.js';
 
 const app = express();
 const PORT = 3000;
@@ -240,6 +241,16 @@ app.post(['/api/instagram/send-dm', '/api/ig/send-dm'], async (req, res) => {
   } catch (err: any) {
     console.error('Error in send-dm route:', err);
     return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Endpoint: Send Broadcast DM
+app.post(['/api/instagram/broadcast', '/api/ig/broadcast'], async (req, res) => {
+  try {
+    await broadcastHandler(req, res);
+  } catch (err: any) {
+    console.error('Error in broadcast route:', err);
+    return res.status(500).json({ success: false, error: err?.message || String(err) });
   }
 });
 

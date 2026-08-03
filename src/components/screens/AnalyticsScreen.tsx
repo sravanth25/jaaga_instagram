@@ -18,19 +18,43 @@ interface AnalyticsScreenProps {
 }
 
 export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ automations }) => {
-  const totalComments = automations.reduce((acc, a) => acc + a.stats.triggersCount, 0);
-  const totalDMs = automations.reduce((acc, a) => acc + a.stats.dmsSent, 0);
-  const totalOpened = Math.round(totalDMs * 0.82);
-  const totalClicked = Math.round(totalDMs * 0.62);
-  const totalLeads = automations.reduce((acc, a) => acc + a.stats.leadsCaptured, 0);
+  const totalComments = automations.reduce((acc, a) => acc + (a.stats?.triggersCount || 0), 0);
+  const totalDMs = automations.reduce((acc, a) => acc + (a.stats?.dmsSent || 0), 0);
+  const totalOpened = automations.reduce((acc, a) => acc + (a.stats?.opened || 0), 0);
+  const totalClicked = automations.reduce((acc, a) => acc + (a.stats?.clicked || 0), 0);
+  const totalLeads = automations.reduce((acc, a) => acc + (a.stats?.leadsCaptured || 0), 0);
 
-  const keywordsRanking = [
-    { keyword: 'CHECKLIST', triggers: 1420, dms: 1380, leads: 940, conversion: '68.1%' },
-    { keyword: 'FIGMA', triggers: 820, dms: 790, leads: 520, conversion: '65.8%' },
-    { keyword: 'PLAYBOOK', triggers: 891, dms: 850, leads: 510, conversion: '60.0%' },
-    { keyword: 'AUTOMATE', triggers: 640, dms: 610, leads: 340, conversion: '55.7%' },
-    { keyword: 'PRICING', triggers: 450, dms: 450, leads: 180, conversion: '40.0%' },
-  ];
+  const sentPct = totalComments > 0 ? ((totalDMs / totalComments) * 100).toFixed(1) : '0.0';
+  const openPct = totalDMs > 0 ? ((totalOpened / totalDMs) * 100).toFixed(1) : '0.0';
+  const ctrPct = totalDMs > 0 ? ((totalClicked / totalDMs) * 100).toFixed(1) : '0.0';
+  const leadPct = totalDMs > 0 ? ((totalLeads / totalDMs) * 100).toFixed(1) : '0.0';
+
+  const keywordMap = new Map<string, { triggers: number; dms: number; leads: number }>();
+  automations.forEach((auto) => {
+    (auto.keywords || []).forEach((kw) => {
+      const cleanKw = kw.trim().toUpperCase();
+      if (!cleanKw) return;
+      const existing = keywordMap.get(cleanKw) || { triggers: 0, dms: 0, leads: 0 };
+      keywordMap.set(cleanKw, {
+        triggers: existing.triggers + (auto.stats?.triggersCount || 0),
+        dms: existing.dms + (auto.stats?.dmsSent || 0),
+        leads: existing.leads + (auto.stats?.leadsCaptured || 0),
+      });
+    });
+  });
+
+  const keywordsRanking = Array.from(keywordMap.entries())
+    .map(([keyword, stats]) => {
+      const conv = stats.dms > 0 ? (stats.leads / stats.dms) * 100 : 0;
+      return {
+        keyword,
+        triggers: stats.triggers,
+        dms: stats.dms,
+        leads: stats.leads,
+        conversion: `${conv.toFixed(1)}%`,
+      };
+    })
+    .sort((a, b) => b.triggers - a.triggers);
 
   return (
     <div id="screen-analytics" className="p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
@@ -78,7 +102,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ automations })
               {totalDMs.toLocaleString()}
             </div>
             <div className="text-xs font-semibold text-purple-600 dark:text-purple-400 mt-0.5">DMs Dispatched</div>
-            <span className="text-[10px] font-bold text-purple-500 mt-2 inline-block">97.2% Sent</span>
+            <span className="text-[10px] font-bold text-purple-500 mt-2 inline-block">{sentPct}% Sent</span>
           </div>
 
           {/* Stage 3 */}
@@ -88,7 +112,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ automations })
               {totalOpened.toLocaleString()}
             </div>
             <div className="text-xs font-semibold text-pink-600 dark:text-pink-400 mt-0.5">DMs Opened</div>
-            <span className="text-[10px] font-bold text-pink-500 mt-2 inline-block">82.0% Open Rate</span>
+            <span className="text-[10px] font-bold text-pink-500 mt-2 inline-block">{openPct}% Open Rate</span>
           </div>
 
           {/* Stage 4 */}
@@ -98,7 +122,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ automations })
               {totalClicked.toLocaleString()}
             </div>
             <div className="text-xs font-semibold text-amber-600 dark:text-amber-400 mt-0.5">Links Clicked</div>
-            <span className="text-[10px] font-bold text-amber-500 mt-2 inline-block">62.0% CTR</span>
+            <span className="text-[10px] font-bold text-amber-500 mt-2 inline-block">{ctrPct}% CTR</span>
           </div>
 
           {/* Stage 5 */}
@@ -108,7 +132,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ automations })
               {totalLeads.toLocaleString()}
             </div>
             <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5">Leads Captured</div>
-            <span className="text-[10px] font-bold text-emerald-600 mt-2 inline-block">56.2% Final Opt-in</span>
+            <span className="text-[10px] font-bold text-emerald-600 mt-2 inline-block">{leadPct}% Final Opt-in</span>
           </div>
         </div>
       </div>
@@ -131,19 +155,27 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ automations })
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
-              {keywordsRanking.map((item, idx) => (
-                <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                  <td className="p-3 font-mono font-bold text-purple-600 dark:text-purple-300">
-                    "{item.keyword}"
-                  </td>
-                  <td className="p-3 text-slate-700 dark:text-slate-300">{item.triggers}</td>
-                  <td className="p-3 text-slate-700 dark:text-slate-300">{item.dms}</td>
-                  <td className="p-3 font-bold text-emerald-600 dark:text-emerald-400">{item.leads}</td>
-                  <td className="p-3 text-right font-extrabold text-purple-700 dark:text-purple-300">
-                    {item.conversion}
+              {keywordsRanking.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="p-8 text-center text-slate-400 italic">
+                    No active trigger keywords found. Create an automation flow to start tracking real keyword metrics.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                keywordsRanking.map((item, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <td className="p-3 font-mono font-bold text-purple-600 dark:text-purple-300">
+                      "{item.keyword}"
+                    </td>
+                    <td className="p-3 text-slate-700 dark:text-slate-300">{item.triggers}</td>
+                    <td className="p-3 text-slate-700 dark:text-slate-300">{item.dms}</td>
+                    <td className="p-3 font-bold text-emerald-600 dark:text-emerald-400">{item.leads}</td>
+                    <td className="p-3 text-right font-extrabold text-purple-700 dark:text-purple-300">
+                      {item.conversion}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
