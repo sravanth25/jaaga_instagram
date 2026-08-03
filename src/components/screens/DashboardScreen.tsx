@@ -19,19 +19,25 @@ import {
 interface DashboardScreenProps {
   automations: Automation[];
   conversations: Conversation[];
+  leads?: any[];
   onNavigate: (screen: ScreenType) => void;
-  onToggleStatus: (id: string) => void;
-  onSelectAutomation: (automation: Automation) => void;
-  onSelectConversation: (conversationId: string) => void;
+  onToggleAutomationStatus?: (id: string) => void;
+  onToggleStatus?: (id: string) => void;
+  onSelectAutomation?: (automation: Automation) => void;
+  onSelectConversation?: (conversationId: string) => void;
+  onStartLiveChat?: (userHandle?: string, initialText?: string) => void;
 }
 
 export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   automations,
   conversations,
+  leads = [],
   onNavigate,
+  onToggleAutomationStatus,
   onToggleStatus,
   onSelectAutomation,
   onSelectConversation,
+  onStartLiveChat,
 }) => {
   const totalDMsSent = automations.reduce((acc, a) => acc + a.stats.dmsSent, 0);
   const totalCommentsReplied = automations.reduce((acc, a) => acc + a.stats.triggersCount, 0);

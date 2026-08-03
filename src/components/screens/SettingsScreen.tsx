@@ -22,6 +22,7 @@ import {
   Loader2,
   Sparkles,
   Check,
+  Database,
 } from 'lucide-react';
 
 interface SettingsScreenProps {
@@ -55,6 +56,35 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [testInput, setTestInput] = useState('');
   const [testResult, setTestResult] = useState<{ reply: string; raw?: string } | null>(null);
   const [testLoading, setTestLoading] = useState(false);
+
+  // Meta Graph API Tester State
+  const [graphRecipientId, setGraphRecipientId] = useState('17841462404931884');
+  const [graphMessageText, setGraphMessageText] = useState('hi');
+  const [graphTestLoading, setGraphTestLoading] = useState(false);
+  const [graphTestResult, setGraphTestResult] = useState<any>(null);
+
+  const handleSendGraphApiDm = async () => {
+    if (!graphMessageText.trim()) return;
+    setGraphTestLoading(true);
+    setGraphTestResult(null);
+    try {
+      const res = await fetch('/api/instagram/send-dm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipientId: graphRecipientId.trim(),
+          text: graphMessageText.trim(),
+          accountId: INSTAGRAM_CONFIG.accountId,
+        }),
+      });
+      const data = await res.json();
+      setGraphTestResult(data);
+    } catch (err: any) {
+      setGraphTestResult({ success: false, error: err.message || 'Failed to dispatch Graph API request' });
+    } finally {
+      setGraphTestLoading(false);
+    }
+  };
 
   const handleSaveAiSettings = () => {
     setAiSaved(true);
@@ -216,6 +246,104 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </div>
             </div>
 
+            {/* Supabase SQL Tables Schema Copy Box */}
+            <div className="p-4 bg-emerald-50/60 dark:bg-emerald-950/20 rounded-xl border border-emerald-200 dark:border-emerald-800/50 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                  <Database className="w-4 h-4 text-emerald-600" />
+                  <span>Supabase Database SQL Schema (4 Tables)</span>
+                </span>
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 font-bold px-2 py-0.5 rounded-full">
+                  PostgreSQL / Supabase
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                Copy and run this SQL script in your Supabase SQL Editor to create all 4 required tables: <code className="font-mono text-emerald-700 dark:text-emerald-300 font-bold">ig_dm_rules</code>, <code className="font-mono text-emerald-700 dark:text-emerald-300 font-bold">ig_leads</code>, <code className="font-mono text-emerald-700 dark:text-emerald-300 font-bold">ig_messages</code>, and <code className="font-mono text-emerald-700 dark:text-emerald-300 font-bold">ig_settings</code>.
+              </p>
+              <pre className="p-3 bg-slate-900 text-slate-200 rounded-lg text-[10px] font-mono overflow-x-auto whitespace-pre-wrap max-h-40">
+{`-- 1. Create Automations/DM Rules table
+CREATE TABLE IF NOT EXISTS public.ig_dm_rules (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  trigger_type TEXT DEFAULT 'comment_dm',
+  is_active BOOLEAN DEFAULT true,
+  keywords JSONB DEFAULT '[]'::jsonb,
+  match_rule TEXT DEFAULT 'contains',
+  public_comment_replies JSONB DEFAULT '[]'::jsonb,
+  dm_message_text TEXT,
+  dm_buttons JSONB DEFAULT '[]'::jsonb,
+  enable_follow_up BOOLEAN DEFAULT false,
+  follow_up_text TEXT,
+  follow_up_delay_hours INT DEFAULT 1,
+  conditions JSONB DEFAULT '{}'::jsonb,
+  stats JSONB DEFAULT '{}'::jsonb,
+  selected_post_ids JSONB DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2. Create Leads/CRM Contacts table
+CREATE TABLE IF NOT EXISTS public.ig_leads (
+  id TEXT PRIMARY KEY,
+  handle TEXT NOT NULL,
+  name TEXT,
+  avatar_url TEXT,
+  email TEXT,
+  phone TEXT,
+  source_automation TEXT DEFAULT 'Direct DM',
+  status TEXT DEFAULT 'New',
+  tags JSONB DEFAULT '[]'::jsonb,
+  captured_at TIMESTAMPTZ DEFAULT NOW(),
+  last_active TEXT DEFAULT 'Recently',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 3. Create Direct Messages Log table
+CREATE TABLE IF NOT EXISTS public.ig_messages (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT,
+  sender_id TEXT,
+  recipient_id TEXT,
+  sender_handle TEXT,
+  message_text TEXT,
+  is_from_user BOOLEAN DEFAULT true,
+  ai_generated BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4. Create App Settings table
+CREATE TABLE IF NOT EXISTS public.ig_settings (
+  id TEXT PRIMARY KEY DEFAULT 'default',
+  account_id TEXT DEFAULT '17841462404931884',
+  app_id TEXT DEFAULT '2878864779136148',
+  graph_api_version TEXT DEFAULT 'v26.0',
+  access_token TEXT,
+  system_prompt TEXT,
+  rate_limit_per_hour INT DEFAULT 60,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Enable RLS & Public Access Policies
+ALTER TABLE public.ig_dm_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ig_leads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ig_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ig_settings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public select ig_dm_rules" ON public.ig_dm_rules FOR SELECT USING (true);
+CREATE POLICY "Allow public insert/update ig_dm_rules" ON public.ig_dm_rules FOR ALL USING (true);
+
+CREATE POLICY "Allow public select ig_leads" ON public.ig_leads FOR SELECT USING (true);
+CREATE POLICY "Allow public insert/update ig_leads" ON public.ig_leads FOR ALL USING (true);
+
+CREATE POLICY "Allow public select ig_messages" ON public.ig_messages FOR SELECT USING (true);
+CREATE POLICY "Allow public insert/update ig_messages" ON public.ig_messages FOR ALL USING (true);
+
+CREATE POLICY "Allow public select ig_settings" ON public.ig_settings FOR SELECT USING (true);
+CREATE POLICY "Allow public insert/update ig_settings" ON public.ig_settings FOR ALL USING (true);`}
+              </pre>
+            </div>
+
             {/* Access Token Masked Field */}
             <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700 flex items-center justify-between">
               <div>
@@ -279,12 +407,90 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   </p>
                 </div>
 
-                <div className="pt-1 border-t border-purple-100 dark:border-purple-900/40">
+                <div className="pt-2 border-t border-purple-100 dark:border-purple-900/40 space-y-2">
                   <p className="text-[10px] text-slate-500">
                     <span className="font-bold text-slate-700 dark:text-slate-300">Health Check Endpoint:</span>{' '}
                     <code className="text-purple-600 dark:text-purple-400 font-mono">https://jaaga-instagram.vercel.app/api/ping</code>
                   </p>
                 </div>
+              </div>
+            </div>
+
+            {/* Live Meta Graph API Messaging Test Section */}
+            <div className="p-4 bg-gradient-to-r from-pink-50/80 via-purple-50/50 to-pink-50/80 dark:from-pink-950/20 dark:via-purple-950/20 dark:to-pink-950/20 rounded-xl border border-pink-200 dark:border-pink-900/50 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <Instagram className="w-4 h-4 text-pink-600" />
+                  <span>Meta Graph API v26.0 Messaging Endpoint</span>
+                </span>
+                <span className="text-[10px] bg-pink-100 text-pink-700 dark:bg-pink-900/60 dark:text-pink-300 font-bold px-2 py-0.5 rounded-full">
+                  Account: 17841462404931884
+                </span>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                  Configured Messages Endpoint URL:
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  value="https://graph.instagram.com/v26.0/17841462404931884/messages"
+                  className="w-full bg-white dark:bg-slate-800 border border-pink-300 dark:border-pink-800 rounded-lg px-2.5 py-1.5 font-mono text-xs text-pink-700 dark:text-pink-300 font-bold focus:outline-none select-all"
+                />
+              </div>
+
+              <div className="pt-2 border-t border-pink-100 dark:border-pink-900/30 space-y-2">
+                <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 block">
+                  Test Direct Message Dispatch via Graph API:
+                </span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-slate-500 block mb-0.5 font-medium">Recipient PSID / IGSID</label>
+                    <input
+                      type="text"
+                      value={graphRecipientId}
+                      onChange={(e) => setGraphRecipientId(e.target.value)}
+                      placeholder="17841462404931884 or User PSID"
+                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 block mb-0.5 font-medium">Message Payload</label>
+                    <input
+                      type="text"
+                      value={graphMessageText}
+                      onChange={(e) => setGraphMessageText(e.target.value)}
+                      placeholder="hi"
+                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSendGraphApiDm}
+                  disabled={graphTestLoading || !graphMessageText.trim()}
+                  className="w-full bg-[#dc2743] hover:bg-[#c11f38] text-white py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                >
+                  {graphTestLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  <span>Dispatch DM to Graph API v26.0</span>
+                </button>
+
+                {graphTestResult && (
+                  <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-pink-200 dark:border-pink-900 text-xs space-y-1 mt-2">
+                    <div className="flex items-center justify-between font-bold">
+                      <span className={graphTestResult.success ? 'text-emerald-600' : 'text-rose-600'}>
+                        {graphTestResult.success ? '✓ Graph API Request Succeeded' : '⚠️ Graph API Notice / Response'}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400">v26.0</span>
+                    </div>
+                    <pre className="text-[10px] font-mono bg-slate-900 text-slate-200 p-2 rounded-lg overflow-x-auto whitespace-pre-wrap">
+                      {JSON.stringify(graphTestResult, null, 2)}
+                    </pre>
+                  </div>
+                )}
               </div>
             </div>
           </div>

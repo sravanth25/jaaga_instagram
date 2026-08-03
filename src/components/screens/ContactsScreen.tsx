@@ -155,7 +155,18 @@ export const ContactsScreen: React.FC<ContactsScreenProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs">
-              {filteredContacts.map((contact) => (
+              {filteredContacts.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="p-12 text-center text-slate-500">
+                    <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                    <p className="font-bold text-slate-700 text-sm">No lead contacts captured yet</p>
+                    <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                      Incoming Instagram DMs with lead details, emails, and phone numbers will automatically populate here.
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                filteredContacts.map((contact) => (
                 <tr
                   key={contact.id}
                   className="hover:bg-slate-50 transition-colors"
@@ -222,7 +233,8 @@ export const ContactsScreen: React.FC<ContactsScreenProps> = ({
                     </button>
                   </td>
                 </tr>
-              ))}
+              )))
+            }
             </tbody>
           </table>
         </div>

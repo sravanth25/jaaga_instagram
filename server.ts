@@ -31,6 +31,140 @@ function getAI() {
 // API Routes
 const INSTAGRAM_VERIFY_TOKEN = process.env.IG_VERIFY_TOKEN || process.env.INSTAGRAM_VERIFY_TOKEN || 'jaaga_ig_verify';
 
+// In-memory store for recent Instagram Webhook events & live messages
+const recentWebhookEvents: Array<{
+  id: string;
+  timestamp: string;
+  senderId: string;
+  messageText: string;
+  replyText?: string;
+  apiResult?: any;
+}> = [];
+
+// Helper function to dispatch Direct Messages to Instagram Graph API v25.0
+async function sendInstagramDM({
+  recipientId,
+  text,
+  buttons,
+  accountId,
+  accessToken,
+  apiVersion,
+}: {
+  recipientId: string;
+  text: string;
+  buttons?: Array<{ label: string; url?: string }>;
+  accountId?: string;
+  accessToken?: string;
+  apiVersion?: string;
+}) {
+  const targetAccountId = accountId || process.env.INSTAGRAM_ACCOUNT_ID || process.env.VITE_INSTAGRAM_ACCOUNT_ID || '17841462404931884';
+  const targetToken = accessToken || process.env.INSTAGRAM_ACCESS_TOKEN || process.env.VITE_INSTAGRAM_ACCESS_TOKEN || process.env.IG_ACCESS_TOKEN;
+  const targetVersion = apiVersion || process.env.INSTAGRAM_GRAPH_VERSION || 'v26.0';
+
+  // Construct payload
+  const messageBody: any = { text };
+  if (buttons && buttons.length > 0) {
+    messageBody.quick_replies = buttons.map((b) => ({
+      content_type: 'text',
+      title: b.label.substring(0, 20),
+      payload: b.label.toUpperCase().replace(/\s+/g, '_'),
+    }));
+  }
+
+  const payload = {
+    recipient: { id: recipientId },
+    message: messageBody,
+  };
+
+  const primaryUrl = `https://graph.instagram.com/${targetVersion}/${targetAccountId}/messages`;
+  const fallbackUrl = `https://graph.facebook.com/${targetVersion}/${targetAccountId}/messages`;
+
+  console.log(`[Instagram DM Graph API] Sending request to ${primaryUrl} for recipient ${recipientId}...`);
+
+  if (!targetToken) {
+    console.warn('[Instagram DM Graph API] Warning: INSTAGRAM_ACCESS_TOKEN is not set.');
+    return {
+      success: false,
+      error: 'INSTAGRAM_ACCESS_TOKEN is not configured on server.',
+      endpointUsed: primaryUrl,
+    };
+  }
+
+  try {
+    let response = await fetch(primaryUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${targetToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    let data: any = await response.json();
+
+    if (!response.ok) {
+      console.warn('[Instagram DM Graph API] primary endpoint error:', data);
+      console.log(`[Instagram DM Graph API] Retrying fallback: ${fallbackUrl}`);
+
+      response = await fetch(fallbackUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${targetToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      data = await response.json();
+    }
+
+    if (response.ok && (data.message_id || data.recipient_id || !data.error)) {
+      console.log('[Instagram DM Graph API] Message delivered successfully:', data);
+      return { success: true, data, endpointUsed: primaryUrl };
+    } else {
+      console.error('[Instagram DM Graph API] Meta API error:', data);
+      return { success: false, error: data?.error?.message || 'Meta API returned error', details: data, endpointUsed: primaryUrl };
+    }
+  } catch (err: any) {
+    console.error('[Instagram DM Graph API] Exception sending DM:', err);
+    return { success: false, error: err.message || 'Network exception', endpointUsed: primaryUrl };
+  }
+}
+
+// Endpoint: Send DM via Meta Graph API v25.0
+app.post(['/api/instagram/send-dm', '/api/ig/send-dm'], async (req, res) => {
+  try {
+    const { recipientId, message, text, buttons, accountId, accessToken } = req.body || {};
+    const recipient = recipientId || '17841462404931884';
+    const messageContent = text || message || '';
+
+    if (!messageContent) {
+      return res.status(400).json({ success: false, error: 'Message text is required' });
+    }
+
+    const result = await sendInstagramDM({
+      recipientId: recipient,
+      text: messageContent,
+      buttons,
+      accountId,
+      accessToken,
+    });
+
+    return res.json({ success: result.success, result });
+  } catch (err: any) {
+    console.error('Error in send-dm route:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Endpoint: Get live events
+app.get(['/api/instagram/live-events', '/api/ig/live-events'], (req, res) => {
+  res.json({
+    success: true,
+    graphEndpoint: 'https://graph.instagram.com/v26.0/17841462404931884/messages',
+    events: recentWebhookEvents,
+  });
+});
+
 // Health Check route
 app.get('/api/ping', (req, res) => {
   res.status(200).json({ ok: true, msg: "pong", time: new Date().toISOString() });
@@ -51,8 +185,65 @@ app.get(['/api/ig/webhook', '/api/instagram/webhook', '/api/webhook'], (req, res
   }
 });
 
-app.post(['/api/ig/webhook', '/api/instagram/webhook', '/api/webhook'], (req, res) => {
+app.post(['/api/ig/webhook', '/api/instagram/webhook', '/api/webhook'], async (req, res) => {
   console.log('[Meta Webhook] Received webhook payload:', JSON.stringify(req.body, null, 2));
+
+  try {
+    const body = req.body;
+    if (body && (body.object === 'instagram' || body.object === 'page')) {
+      const entries = body.entry || [];
+      for (const entry of entries) {
+        if (Array.isArray(entry.messaging)) {
+          for (const messagingEvent of entry.messaging) {
+            const senderId = messagingEvent.sender?.id;
+            const recipientId = messagingEvent.recipient?.id;
+            const messageText = messagingEvent.message?.text;
+            const isEcho = messagingEvent.message?.is_echo;
+
+            if (messageText && !isEcho && senderId) {
+              console.log(`[Meta Webhook] Incoming message from ${senderId}: "${messageText}"`);
+
+              // Generate AI response via Gemini
+              let replyText = '';
+              try {
+                const ai = getAI();
+                const prompt = `You are JaaGa AI Instagram Assistant for account 17841462404931884.
+The user sent: "${messageText}".
+Generate a helpful, friendly, concise response (max 2-3 sentences, with emojis) answering their query or welcoming them to JaaGa AI services.`;
+                const response = await ai.models.generateContent({
+                  model: 'gemini-3.6-flash',
+                  contents: prompt,
+                });
+                replyText = response.text?.replace(/\*/g, '').trim() || "Thanks for messaging JaaGa! Visit https://www.jaaga.ai or reply with your query 🚀";
+              } catch (aiErr) {
+                replyText = "Hello! Thanks for reaching out to JaaGa on Instagram! How can we help you today? 🚀";
+              }
+
+              // Send response back via Instagram Graph API v25.0
+              const apiRes = await sendInstagramDM({
+                recipientId: senderId,
+                text: replyText,
+                accountId: recipientId || '17841462404931884',
+              });
+
+              recentWebhookEvents.unshift({
+                id: `evt_${Date.now()}`,
+                timestamp: new Date().toISOString(),
+                senderId,
+                messageText,
+                replyText,
+                apiResult: apiRes,
+              });
+              if (recentWebhookEvents.length > 50) recentWebhookEvents.pop();
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Meta Webhook] Error processing event:', err);
+  }
+
   return res.status(200).send('EVENT_RECEIVED');
 });
 app.post(['/api/ig/ai-test', '/api/gemini/ai-test-chat'], async (req, res) => {

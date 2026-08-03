@@ -64,6 +64,26 @@ export default async function handler(req, res) {
                     const cleanReply = rawReply.replace(/\*/g, '').trim();
 
                     console.log(`[AI DM Response Generated for ${senderId}]:`, cleanReply);
+
+                    // Send DM via Instagram Graph API v26.0 (matching n8n request structure)
+                    const targetToken = process.env.INSTAGRAM_ACCESS_TOKEN || process.env.VITE_INSTAGRAM_ACCESS_TOKEN || process.env.IG_ACCESS_TOKEN;
+                    const accountId = process.env.INSTAGRAM_ACCOUNT_ID || '17841462404931884';
+                    if (targetToken) {
+                      const dmPayload = {
+                        recipient: { id: senderId },
+                        message: { text: cleanReply },
+                      };
+                      const dmUrl = `https://graph.instagram.com/v26.0/${accountId}/messages`;
+                      console.log(`[Webhook DM Outbound] Sending to ${dmUrl} for recipient ${senderId}...`);
+                      await fetch(dmUrl, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${targetToken}`,
+                        },
+                        body: JSON.stringify(dmPayload),
+                      });
+                    }
                   } catch (aiErr) {
                     console.error('[Gemini Call Error in DM Webhook]:', aiErr);
                   }

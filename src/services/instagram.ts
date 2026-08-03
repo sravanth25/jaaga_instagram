@@ -35,25 +35,50 @@ export interface WebhookSubscriptionParams {
 }
 
 /**
- * Sends a Direct Message to an Instagram user recipient via Instagram Messaging API.
- * TODO: Wire to backend endpoint POST /api/instagram/send-dm
+ * Sends a Direct Message to an Instagram user recipient via Instagram Messaging API v25.0.
  */
-export async function sendDirectMessage(params: SendDMParams): Promise<{ success: boolean; messageId: string }> {
-  console.log('[Instagram Graph API STUB] sendDirectMessage called:', {
-    appId: INSTAGRAM_CONFIG.appId,
+export async function sendDirectMessage(params: SendDMParams): Promise<{ success: boolean; messageId: string; error?: string }> {
+  console.log('[Instagram Graph API] sendDirectMessage calling server proxy:', {
     accountId: INSTAGRAM_CONFIG.accountId,
     recipientId: params.recipientId,
     messageLength: params.message.length,
-    buttonCount: params.buttons?.length || 0,
   });
 
-  // Simulated network latency
-  await new Promise((resolve) => setTimeout(resolve, 350));
+  try {
+    const res = await fetch('/api/instagram/send-dm', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        recipientId: params.recipientId,
+        text: params.message,
+        buttons: params.buttons,
+        accountId: INSTAGRAM_CONFIG.accountId,
+      }),
+    });
 
-  return {
-    success: true,
-    messageId: `mid_ig_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-  };
+    const data = await res.json();
+    if (data.success) {
+      return {
+        success: true,
+        messageId: data.result?.data?.message_id || `mid_ig_${Date.now()}`,
+      };
+    } else {
+      return {
+        success: false,
+        messageId: '',
+        error: data.result?.error || data.error || 'Failed to dispatch Meta DM',
+      };
+    }
+  } catch (err: any) {
+    console.error('Network error calling /api/instagram/send-dm:', err);
+    return {
+      success: false,
+      messageId: '',
+      error: err.message || 'Network exception sending DM',
+    };
+  }
 }
 
 /**

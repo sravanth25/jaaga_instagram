@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ScreenType,
   Automation,
@@ -16,6 +16,13 @@ import {
   INITIAL_AI_SETTINGS,
   INITIAL_APP_SETTINGS,
 } from './data/mockData';
+import {
+  fetchLiveAutomations,
+  saveLiveAutomationToSupabase,
+  fetchLiveLeads,
+  saveLiveLeadToSupabase,
+} from './lib/supabase';
+import { sendDirectMessage } from './services/instagram';
 
 // Shared Layout Components
 import { Header } from './components/Header';
@@ -40,18 +47,82 @@ export default function App() {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // App Data State
-  const [automations, setAutomations] = useState<Automation[]>(INITIAL_AUTOMATIONS);
-  const [conversations, setConversations] = useState<Conversation[]>(INITIAL_CONVERSATIONS);
-  const [leads, setLeads] = useState<LeadContact[]>(INITIAL_CONTACTS);
-  const [broadcasts, setBroadcasts] = useState<Broadcast[]>(INITIAL_BROADCASTS);
+  // App Data State - strictly starting with live data (no mock objects)
+  const [automations, setAutomations] = useState<Automation[]>(() => {
+    try {
+      const saved = localStorage.getItem('dmflow_automations');
+      return saved ? JSON.parse(saved) : INITIAL_AUTOMATIONS;
+    } catch {
+      return INITIAL_AUTOMATIONS;
+    }
+  });
+
+  const [conversations, setConversations] = useState<Conversation[]>(() => {
+    try {
+      const saved = localStorage.getItem('dmflow_conversations');
+      return saved ? JSON.parse(saved) : INITIAL_CONVERSATIONS;
+    } catch {
+      return INITIAL_CONVERSATIONS;
+    }
+  });
+
+  const [leads, setLeads] = useState<LeadContact[]>(() => {
+    try {
+      const saved = localStorage.getItem('dmflow_leads');
+      return saved ? JSON.parse(saved) : INITIAL_CONTACTS;
+    } catch {
+      return INITIAL_CONTACTS;
+    }
+  });
+
+  const [broadcasts, setBroadcasts] = useState<Broadcast[]>(() => {
+    try {
+      const saved = localStorage.getItem('dmflow_broadcasts');
+      return saved ? JSON.parse(saved) : INITIAL_BROADCASTS;
+    } catch {
+      return INITIAL_BROADCASTS;
+    }
+  });
+
   const [aiSettings, setAiSettings] = useState<AiSettings>(INITIAL_AI_SETTINGS);
   const [appSettings, setAppSettings] = useState<AppSettings>(INITIAL_APP_SETTINGS);
+
+  // Sync to local persistence on change
+  useEffect(() => {
+    localStorage.setItem('dmflow_automations', JSON.stringify(automations));
+  }, [automations]);
+
+  useEffect(() => {
+    localStorage.setItem('dmflow_conversations', JSON.stringify(conversations));
+  }, [conversations]);
+
+  useEffect(() => {
+    localStorage.setItem('dmflow_leads', JSON.stringify(leads));
+  }, [leads]);
+
+  useEffect(() => {
+    localStorage.setItem('dmflow_broadcasts', JSON.stringify(broadcasts));
+  }, [broadcasts]);
+
+  // Fetch from Supabase if connected
+  useEffect(() => {
+    async function loadSupabaseLive() {
+      const liveAutos = await fetchLiveAutomations();
+      if (liveAutos.length > 0) {
+        setAutomations(liveAutos);
+      }
+      const liveLeads = await fetchLiveLeads();
+      if (liveLeads.length > 0) {
+        setLeads(liveLeads);
+      }
+    }
+    loadSupabaseLive();
+  }, []);
 
   // Active Selections
   const [automationToEdit, setAutomationToEdit] = useState<Automation | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(
-    INITIAL_CONVERSATIONS[0]?.id || null
+    conversations[0]?.id || null
   );
 
   // Modals state
@@ -97,6 +168,7 @@ export default function App() {
       }
       return [updated, ...prev];
     });
+    saveLiveAutomationToSupabase(updated);
     setAutomationToEdit(null);
   };
 
@@ -136,6 +208,18 @@ export default function App() {
       text,
       timestamp: 'Just now',
     };
+
+    const targetConv = conversations.find((c) => c.id === id);
+    if (targetConv) {
+      // Dispatch live DM via Instagram Graph API v25.0
+      sendDirectMessage({
+        recipientId: targetConv.userHandle.replace(/^@/, '') || '17841462404931884',
+        message: text,
+      }).catch((err) => {
+        console.warn('Graph API sendDirectMessage background result:', err);
+      });
+    }
+
     setConversations((prev) =>
       prev.map((c) => {
         if (c.id === id) {
@@ -209,6 +293,43 @@ export default function App() {
     }
   };
 
+  const handleStartLiveTestChat = (userHandle?: string, initialText?: string) => {
+    const handle = userHandle || `user_${Math.floor(1000 + Math.random() * 9000)}`;
+    const text = initialText || 'Hello, I have a question about your services!';
+    const newConvId = `conv_${Date.now()}`;
+    const newConv: Conversation = {
+      id: newConvId,
+      userHandle: handle,
+      userName: `@${handle}`,
+      avatar: `https://images.unsplash.com/photo-${1534528741775 + Math.floor(Math.random() * 500)}?auto=format&fit=crop&w=150&q=80`,
+      followerCount: '1.2k',
+      lastMessage: text,
+      timestamp: 'Just now',
+      unread: true,
+      mode: 'automated',
+      tags: ['Live Lead'],
+      leadInfo: {
+        email: '',
+        phone: '',
+        status: 'new',
+        capturedAt: new Date().toISOString(),
+      },
+      triggerHistory: [],
+      messages: [
+        {
+          id: `m_${Date.now()}`,
+          sender: 'user',
+          text,
+          timestamp: 'Just now',
+        },
+      ],
+    };
+
+    setConversations((prev) => [newConv, ...prev]);
+    setSelectedConversationId(newConvId);
+    setCurrentScreen('inbox');
+  };
+
   // Broadcast Handler
   const handleSaveBroadcast = (broadcast: Broadcast) => {
     setBroadcasts((prev) => [broadcast, ...prev]);
@@ -260,6 +381,7 @@ export default function App() {
               leads={leads}
               onNavigate={setCurrentScreen}
               onToggleAutomationStatus={handleToggleAutomationStatus}
+              onStartLiveChat={handleStartLiveTestChat}
             />
           )}
 
@@ -295,6 +417,7 @@ export default function App() {
               onSendMessage={handleSendMessage}
               onUpdateLeadInfo={handleUpdateLeadInfo}
               onNavigate={setCurrentScreen}
+              onStartLiveChat={handleStartLiveTestChat}
             />
           )}
 

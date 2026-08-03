@@ -28,6 +28,7 @@ interface InboxScreenProps {
   onSendMessage: (id: string, text: string, sender: 'bot' | 'human') => void;
   onUpdateLeadInfo: (id: string, email: string, phone: string, tags: string[]) => void;
   onNavigate: (screen: ScreenType) => void;
+  onStartLiveChat?: (userHandle?: string, initialText?: string) => void;
 }
 
 export const InboxScreen: React.FC<InboxScreenProps> = ({
@@ -38,6 +39,7 @@ export const InboxScreen: React.FC<InboxScreenProps> = ({
   onSendMessage,
   onUpdateLeadInfo,
   onNavigate,
+  onStartLiveChat,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<'all' | 'automated' | 'manual' | 'unread'>('all');
@@ -179,68 +181,84 @@ export const InboxScreen: React.FC<InboxScreenProps> = ({
 
         {/* Conversation Items */}
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-          {filteredConvs.map((conv) => {
-            const isSelected = activeConv?.id === conv.id;
-            return (
-              <div
-                key={conv.id}
-                onClick={() => onSelectConversation(conv.id)}
-                className={`p-3.5 flex items-start gap-3 cursor-pointer transition-colors ${
-                  isSelected
-                    ? 'bg-pink-50/50 border-l-4 border-[#dc2743]'
-                    : 'hover:bg-slate-50'
-                }`}
-              >
-                <div className="relative shrink-0">
-                  <img
-                    src={conv.avatar}
-                    alt={conv.userHandle}
-                    className="w-10 h-10 rounded-full object-cover ring-2 ring-pink-500/20"
-                  />
-                  <span
-                    className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${
-                      conv.mode === 'automated' ? 'bg-pink-500' : 'bg-amber-500'
-                    }`}
-                  />
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-900 truncate">
-                      @{conv.userHandle}
-                    </span>
-                    <span className="text-[10px] text-slate-400 shrink-0 font-medium">
-                      {conv.timestamp}
-                    </span>
+          {filteredConvs.length === 0 ? (
+            <div className="p-6 text-center space-y-3">
+              <MessageSquare className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-xs text-slate-500 font-medium">No active chats yet</p>
+              {onStartLiveChat && (
+                <button
+                  onClick={() => onStartLiveChat()}
+                  className="w-full py-2 px-3 bg-pink-600 hover:bg-pink-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Simulate Incoming DM</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            filteredConvs.map((conv) => {
+              const isSelected = activeConv?.id === conv.id;
+              return (
+                <div
+                  key={conv.id}
+                  onClick={() => onSelectConversation(conv.id)}
+                  className={`p-3.5 flex items-start gap-3 cursor-pointer transition-colors ${
+                    isSelected
+                      ? 'bg-pink-50/50 border-l-4 border-[#dc2743]'
+                      : 'hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="relative shrink-0">
+                    <img
+                      src={conv.avatar}
+                      alt={conv.userHandle}
+                      className="w-10 h-10 rounded-full object-cover ring-2 ring-pink-500/20"
+                    />
+                    <span
+                      className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${
+                        conv.mode === 'automated' ? 'bg-pink-500' : 'bg-amber-500'
+                      }`}
+                    />
                   </div>
-                  <p className="text-xs text-slate-500 truncate mt-0.5">
-                    {conv.lastMessage}
-                  </p>
 
-                  <div className="flex items-center gap-1.5 mt-2">
-                    {conv.mode === 'automated' ? (
-                      <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-pink-100 text-pink-700">
-                        🤖 Bot Active
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-900 truncate">
+                        @{conv.userHandle}
                       </span>
-                    ) : (
-                      <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-700">
-                        👤 Human Mode
+                      <span className="text-[10px] text-slate-400 shrink-0 font-medium">
+                        {conv.timestamp}
                       </span>
-                    )}
+                    </div>
+                    <p className="text-xs text-slate-500 truncate mt-0.5">
+                      {conv.lastMessage}
+                    </p>
 
-                    {conv.tags.slice(0, 1).map((t, idx) => (
-                      <span
-                        key={idx}
-                        className="px-1.5 py-0.2 rounded text-[9px] bg-slate-100 text-slate-600 font-medium"
-                      >
-                        {t}
-                      </span>
-                    ))}
+                    <div className="flex items-center gap-1.5 mt-2">
+                      {conv.mode === 'automated' ? (
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-pink-100 text-pink-700">
+                          🤖 Bot Active
+                        </span>
+                      ) : (
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-700">
+                          👤 Human Mode
+                        </span>
+                      )}
+
+                      {conv.tags.slice(0, 1).map((t, idx) => (
+                        <span
+                          key={idx}
+                          className="px-1.5 py-0.2 rounded text-[9px] bg-slate-100 text-slate-600 font-medium"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
 
@@ -403,8 +421,23 @@ export const InboxScreen: React.FC<InboxScreenProps> = ({
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center p-8 text-center text-slate-400">
-          Select a conversation from the left to view messages.
+        <div className="flex-1 flex flex-col items-center justify-center p-8 bg-white text-center border-r border-slate-200">
+          <div className="w-16 h-16 rounded-full bg-pink-50 text-pink-600 flex items-center justify-center mb-4">
+            <MessageSquare className="w-8 h-8" />
+          </div>
+          <h3 className="text-lg font-bold text-slate-900 mb-1">Live Instagram Inbox</h3>
+          <p className="text-sm text-slate-500 max-w-md mb-6">
+            Incoming DMs, automated comment-to-DM responses, and human live chats will appear here.
+          </p>
+          {onStartLiveChat && (
+            <button
+              onClick={() => onStartLiveChat()}
+              className="px-5 py-2.5 bg-[#dc2743] hover:bg-[#c11f38] text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Simulate Live Incoming DM</span>
+            </button>
+          )}
         </div>
       )}
 
