@@ -1,3 +1,6 @@
+import { GoogleGenAI } from '@google/genai';
+import { DEFAULT_JAAGA_SYSTEM_PROMPT } from './ai-test.js';
+
 export default async function handler(req, res) {
   // CORS & Header settings for Vercel
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -42,7 +45,30 @@ export default async function handler(req, res) {
               const senderId = messagingEvent.sender?.id;
               const recipientId = messagingEvent.recipient?.id;
               const messageText = messagingEvent.message?.text;
-              console.log(`[DM Event] From: ${senderId} -> To: ${recipientId} | Message: "${messageText}"`);
+              const isEcho = messagingEvent.message?.is_echo;
+
+              if (messageText && !isEcho && senderId) {
+                console.log(`[DM Event] From: ${senderId} -> To: ${recipientId} | Message: "${messageText}"`);
+
+                // Check AI Agent status & process fallback AI response
+                const apiKey = process.env.GEMINI_API_KEY;
+                if (apiKey) {
+                  try {
+                    const ai = new GoogleGenAI({ apiKey });
+                    const fullPrompt = `${DEFAULT_JAAGA_SYSTEM_PROMPT}\n\nUser Message: ${messageText}`;
+                    const response = await ai.models.generateContent({
+                      model: 'gemini-3.6-flash',
+                      contents: fullPrompt,
+                    });
+                    const rawReply = response.text || '';
+                    const cleanReply = rawReply.replace(/\*/g, '').trim();
+
+                    console.log(`[AI DM Response Generated for ${senderId}]:`, cleanReply);
+                  } catch (aiErr) {
+                    console.error('[Gemini Call Error in DM Webhook]:', aiErr);
+                  }
+                }
+              }
             }
           }
 

@@ -55,6 +55,34 @@ app.post(['/api/ig/webhook', '/api/instagram/webhook', '/api/webhook'], (req, re
   console.log('[Meta Webhook] Received webhook payload:', JSON.stringify(req.body, null, 2));
   return res.status(200).send('EVENT_RECEIVED');
 });
+app.post(['/api/ig/ai-test', '/api/gemini/ai-test-chat'], async (req, res) => {
+  try {
+    const { text, userMessage, systemPrompt } = req.body || {};
+    const message = (text || userMessage || '').trim();
+    if (!message) {
+      return res.status(400).json({ error: 'Message text is required' });
+    }
+
+    const ai = getAI();
+    const prompt = `${systemPrompt || 'You are JaaGa AI Assistant.'}\n\nUser Question: ${message}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.6-flash',
+      contents: prompt,
+    });
+
+    const rawText = response.text || '';
+    const cleanReply = rawText.replace(/\*/g, '').trim() || "Thanks for messaging JaaGa! Visit https://www.jaaga.ai or call +91 88851 66880.";
+    res.json({ reply: cleanReply, raw: rawText });
+  } catch (error: any) {
+    console.error('Gemini ai-test error:', error);
+    res.json({
+      reply: "Thanks for messaging JaaGa! Our team will get back to you shortly. Visit https://www.jaaga.ai or call +91 88851 66880.",
+      raw: error?.message || String(error),
+    });
+  }
+});
+
 app.post('/api/gemini/suggest-reply', async (req, res) => {
   try {
     const { chatHistory, userHandle, customerNote } = req.body;

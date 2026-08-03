@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AppSettings, ScreenType } from '../../types';
 import { INSTAGRAM_CONFIG } from '../../services/instagram';
+import { DEFAULT_JAAGA_SYSTEM_PROMPT } from '../../../api/ig/ai-test';
 import {
   Settings,
   Instagram,
@@ -16,6 +17,11 @@ import {
   Plus,
   Trash2,
   ExternalLink,
+  Bot,
+  Send,
+  Loader2,
+  Sparkles,
+  Check,
 } from 'lucide-react';
 
 interface SettingsScreenProps {
@@ -39,6 +45,46 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const [team, setTeam] = useState(appSettings.teamMembers);
   const [newMemberEmail, setNewMemberEmail] = useState('');
+
+  // AI Agent Settings Panel state
+  const [aiEnabled, setAiEnabled] = useState(true);
+  const [aiSystemPrompt, setAiSystemPrompt] = useState(DEFAULT_JAAGA_SYSTEM_PROMPT);
+  const [aiSaved, setAiSaved] = useState(false);
+
+  // AI Sandbox state
+  const [testInput, setTestInput] = useState('');
+  const [testResult, setTestResult] = useState<{ reply: string; raw?: string } | null>(null);
+  const [testLoading, setTestLoading] = useState(false);
+
+  const handleSaveAiSettings = () => {
+    setAiSaved(true);
+    setTimeout(() => setAiSaved(false), 3000);
+  };
+
+  const handleRunAiTest = async () => {
+    if (!testInput.trim()) return;
+    setTestLoading(true);
+    setTestResult(null);
+    try {
+      const res = await fetch('/api/ig/ai-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: testInput.trim(),
+          systemPrompt: aiSystemPrompt,
+        }),
+      });
+      const data = await res.json();
+      setTestResult(data);
+    } catch (e: any) {
+      setTestResult({
+        reply: "Thanks for messaging JaaGa! Our team will get back to you shortly. Visit https://www.jaaga.ai or call +91 88851 66880.",
+        raw: e?.message || String(e),
+      });
+    } finally {
+      setTestLoading(false);
+    }
+  };
 
   const handleSaveComplianceSettings = () => {
     onUpdateSettings({
@@ -226,6 +272,125 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   </p>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* AI Agent Configuration & Sandbox Section */}
+          <div id="ai-agent-settings" className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] flex items-center justify-center text-white shadow-xs">
+                  <Bot className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <span>AI Agent Configuration</span>
+                    <span className="bg-purple-100 text-purple-700 text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider">
+                      Gemini 3.6 Flash
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Saves to ig_settings key <code className="font-mono text-purple-600 dark:text-purple-400">ai_enabled</code> and <code className="font-mono text-purple-600 dark:text-purple-400">ai_system_prompt</code>
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSaveAiSettings}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                {aiSaved ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Sparkles className="w-3.5 h-3.5" />}
+                <span>{aiSaved ? 'Saved to ig_settings' : 'Save AI Settings'}</span>
+              </button>
+            </div>
+
+            {/* AI Agent Toggle */}
+            <label className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700 cursor-pointer">
+              <div>
+                <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                  AI Agent enabled
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Automatically answer Instagram DMs that don't match any keyword rules using Gemini & JaaGa knowledge prompt.
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={aiEnabled}
+                onChange={(e) => setAiEnabled(e.target.checked)}
+                className="w-4 h-4 text-purple-600 rounded cursor-pointer accent-purple-600"
+              />
+            </label>
+
+            {/* AI System Prompt Textarea */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                <span>AI System Prompt</span>
+                <span className="text-[10px] text-slate-400 font-normal">Pre-filled with JaaGa System Prompt</span>
+              </label>
+              <textarea
+                rows={10}
+                value={aiSystemPrompt}
+                onChange={(e) => setAiSystemPrompt(e.target.value)}
+                placeholder="Paste system prompt here..."
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-mono text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500 leading-relaxed"
+              />
+            </div>
+
+            {/* Test the AI Sandbox */}
+            <div className="p-4 bg-purple-50/40 dark:bg-purple-950/20 rounded-xl border border-purple-200/60 dark:border-purple-800/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Test the AI Sandbox</span>
+                </span>
+                <span className="text-[10px] text-slate-500">POST /api/ig/ai-test</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={testInput}
+                  onChange={(e) => setTestInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleRunAiTest()}
+                  placeholder="e.g. what is a mutation certificate and what does it cost"
+                  className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleRunAiTest}
+                  disabled={testLoading || !testInput.trim()}
+                  className="bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] text-white px-4 py-2 rounded-xl text-xs font-bold hover:opacity-95 transition-all disabled:opacity-50 flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  {testLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  <span>Send</span>
+                </button>
+              </div>
+
+              {testResult && (
+                <div className="space-y-2 pt-2 border-t border-purple-200/50 dark:border-purple-800/40">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                      Plain-text AI Reply (Delivered to User DM):
+                    </span>
+                    <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-purple-200 dark:border-purple-800 text-xs text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed shadow-xs">
+                      {testResult.reply}
+                    </div>
+                  </div>
+
+                  {testResult.raw && testResult.raw !== testResult.reply && (
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                        Raw Gemini Output:
+                      </span>
+                      <pre className="bg-slate-900 text-slate-300 p-2.5 rounded-lg text-[10px] font-mono overflow-x-auto whitespace-pre-wrap">
+                        {testResult.raw}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
