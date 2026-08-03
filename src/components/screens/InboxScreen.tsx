@@ -18,6 +18,12 @@ import {
   Loader2,
   Shield,
   Zap,
+  Terminal,
+  Trash2,
+  Copy,
+  Check,
+  ExternalLink,
+  Info,
 } from 'lucide-react';
 
 interface InboxScreenProps {
@@ -29,6 +35,7 @@ interface InboxScreenProps {
   onUpdateLeadInfo: (id: string, email: string, phone: string, tags: string[]) => void;
   onNavigate: (screen: ScreenType) => void;
   onStartLiveChat?: (userHandle?: string, initialText?: string) => void;
+  onClearDemoData?: () => void;
 }
 
 export const InboxScreen: React.FC<InboxScreenProps> = ({
@@ -40,12 +47,24 @@ export const InboxScreen: React.FC<InboxScreenProps> = ({
   onUpdateLeadInfo,
   onNavigate,
   onStartLiveChat,
+  onClearDemoData,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterTab, setFilterTab] = useState<'all' | 'automated' | 'manual' | 'unread'>('all');
+  const [filterTab, setFilterTab] = useState<'all' | 'automated' | 'manual' | 'unread' | 'live'>('all');
+  const [showWebhookInfo, setShowWebhookInfo] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const [messageInput, setMessageInput] = useState('');
   const [isSuggesting, setIsSuggesting] = useState(false);
+
+  const callbackUrl = `${window.location.origin}/api/ig/webhook`;
+  const verifyToken = 'jaaga_ig_verify';
+
+  const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
 
   // Active conversation
   const activeConv =
@@ -77,6 +96,9 @@ export const InboxScreen: React.FC<InboxScreenProps> = ({
     if (filterTab === 'automated') return conv.mode === 'automated';
     if (filterTab === 'manual') return conv.mode === 'manual';
     if (filterTab === 'unread') return conv.unread;
+    if (filterTab === 'live') {
+      return conv.tags?.some((t) => t.toLowerCase().includes('live') || t.toLowerCase().includes('meta') || t.toLowerCase().includes('instagram'));
+    }
     return true;
   });
 
@@ -146,25 +168,93 @@ export const InboxScreen: React.FC<InboxScreenProps> = ({
       <div className="w-full lg:w-80 bg-white border-r border-slate-200 flex flex-col shrink-0">
         {/* Search & Filter Header */}
         <div className="p-4 border-b border-slate-200 space-y-3">
-          <div className="flex items-center justify-between gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-1.5 text-[11px] font-semibold text-emerald-800">
-            <div className="flex items-center gap-1.5">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <span>Live Webhook Engine</span>
-            </div>
-            {onStartLiveChat && (
+          <div className="flex flex-col gap-2 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-2.5 text-[11px] font-semibold text-emerald-900">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="font-bold text-emerald-950">Live Webhook Engine Active</span>
+              </div>
               <button
-                onClick={() => onStartLiveChat(`user_${Math.floor(1000 + Math.random() * 9000)}`, 'hi')}
-                className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 shadow-xs cursor-pointer"
-                title="Send test 'hi' DM to verify automated response"
+                onClick={() => setShowWebhookInfo(!showWebhookInfo)}
+                className="px-2 py-0.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer border border-emerald-300"
               >
-                <Plus className="w-3 h-3" />
-                <span>Simulate "hi"</span>
+                <Info className="w-3 h-3 text-emerald-700" />
+                <span>Meta Config</span>
               </button>
-            )}
+            </div>
+
+            <div className="flex items-center justify-between gap-1 pt-1 border-t border-emerald-200/60">
+              {onStartLiveChat && (
+                <button
+                  onClick={() => onStartLiveChat(`user_${Math.floor(1000 + Math.random() * 9000)}`, 'hi')}
+                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 shadow-xs cursor-pointer"
+                  title="Send test 'hi' DM to verify automated response"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Simulate "hi" DM</span>
+                </button>
+              )}
+              {onClearDemoData && (
+                <button
+                  onClick={onClearDemoData}
+                  className="px-2 py-1 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-[10px] font-semibold transition-all flex items-center gap-1 cursor-pointer"
+                  title="Hide preset demo accounts to view only live incoming DMs"
+                >
+                  <Trash2 className="w-3 h-3 text-slate-400" />
+                  <span>Clear Demo Data</span>
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Expandable Meta Webhook Setup Panel */}
+          {showWebhookInfo && (
+            <div className="bg-slate-900 text-slate-100 rounded-xl p-3 text-[11px] space-y-2 border border-slate-700 shadow-md">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-emerald-400 flex items-center gap-1">
+                  <Terminal className="w-3.5 h-3.5" /> Meta Instagram Callback URL
+                </span>
+                <button onClick={() => setShowWebhookInfo(false)} className="text-slate-400 hover:text-white text-[10px]">✕ Close</button>
+              </div>
+              
+              <div className="space-y-1.5 text-[10px]">
+                <div>
+                  <div className="text-slate-400">Callback URL:</div>
+                  <div className="flex items-center gap-1 bg-slate-800 p-1.5 rounded-md font-mono text-[10px] text-slate-200 border border-slate-700 overflow-x-auto">
+                    <span className="truncate flex-1">{callbackUrl}</span>
+                    <button
+                      onClick={() => copyToClipboard(callbackUrl, 'url')}
+                      className="p-1 hover:bg-slate-700 rounded text-slate-300"
+                      title="Copy Callback URL"
+                    >
+                      {copiedField === 'url' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-slate-400">Verify Token:</div>
+                  <div className="flex items-center justify-between bg-slate-800 p-1.5 rounded-md font-mono text-[10px] text-slate-200 border border-slate-700">
+                    <span>{verifyToken}</span>
+                    <button
+                      onClick={() => copyToClipboard(verifyToken, 'token')}
+                      className="p-1 hover:bg-slate-700 rounded text-slate-300"
+                      title="Copy Verify Token"
+                    >
+                      {copiedField === 'token' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-[9.5px] text-slate-400 pt-1">
+                  Paste this Callback URL & Verify Token into your Meta App Developer Dashboard under <strong className="text-slate-200">Instagram Direct Webhooks</strong>.
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
@@ -180,6 +270,7 @@ export const InboxScreen: React.FC<InboxScreenProps> = ({
           <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">
             {[
               { id: 'all', label: 'All' },
+              { id: 'live', label: '⚡ Live DMs' },
               { id: 'automated', label: 'Bot' },
               { id: 'manual', label: 'Human' },
               { id: 'unread', label: 'Unread' },

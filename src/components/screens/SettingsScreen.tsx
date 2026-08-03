@@ -44,6 +44,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [quietStart, setQuietStart] = useState(appSettings.quietHoursStart);
   const [quietEnd, setQuietEnd] = useState(appSettings.quietHoursEnd);
 
+  const [connectedHandleInput, setConnectedHandleInput] = useState(appSettings.connectedHandle);
+  const [accountIdInput, setAccountIdInput] = useState(appSettings.accountID);
+  const [accountSaved, setAccountSaved] = useState(false);
+
+  const handleSaveAccount = () => {
+    const clean = connectedHandleInput.replace(/^@/, '').trim();
+    onUpdateSettings({
+      ...appSettings,
+      connectedHandle: clean || 'jaaga.ai',
+      accountID: accountIdInput.trim() || appSettings.accountID,
+    });
+    setAccountSaved(true);
+    setTimeout(() => setAccountSaved(false), 2500);
+  };
+
   const [team, setTeam] = useState(appSettings.teamMembers);
   const [newMemberEmail, setNewMemberEmail] = useState('');
 
@@ -138,7 +153,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         });
       },
       'Reconnect Instagram Account',
-      'This will refresh your Meta OAuth token session for @design.master.'
+      `This will refresh your Meta OAuth token session for @${appSettings.connectedHandle}.`
     );
   };
 
@@ -205,45 +220,59 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </button>
             </div>
 
-            {/* Read-only App ID, Account ID, and Graph API Version fields */}
+            {/* Editable Instagram Account Handle & Meta API Config */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700">
-                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                  INSTAGRAM_APP_ID
+              <div className="p-3 bg-purple-50/50 dark:bg-purple-950/20 rounded-xl border border-purple-200 dark:border-purple-800/50">
+                <label className="text-[10px] font-bold text-purple-700 dark:text-purple-300 uppercase block mb-1">
+                  CONNECTED INSTAGRAM HANDLE
                 </label>
-                <input
-                  type="text"
-                  readOnly
-                  value={INSTAGRAM_CONFIG.appId}
-                  className="w-full bg-transparent font-mono text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
-                />
+                <div className="flex items-center gap-1">
+                  <span className="text-xs font-bold text-purple-500">@</span>
+                  <input
+                    type="text"
+                    value={connectedHandleInput}
+                    onChange={(e) => setConnectedHandleInput(e.target.value)}
+                    placeholder="e.g. jaaga.ai"
+                    className="w-full bg-white dark:bg-slate-800 px-2 py-1 rounded border border-purple-200 dark:border-purple-700 text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  />
+                </div>
               </div>
 
               <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700">
                 <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                  INSTAGRAM_ACCOUNT_ID
+                  INSTAGRAM ACCOUNT ID
                 </label>
                 <input
                   type="text"
-                  readOnly
-                  value={INSTAGRAM_CONFIG.accountId}
-                  className="w-full bg-transparent font-mono text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
+                  value={accountIdInput}
+                  onChange={(e) => setAccountIdInput(e.target.value)}
+                  className="w-full bg-white dark:bg-slate-800 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 font-mono text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none"
                 />
               </div>
 
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700">
-                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                  GRAPH API VERSION
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700 flex flex-col justify-between">
+                <label className="text-[10px] font-bold text-slate-400 uppercase block">
+                  META GRAPH API VERSION
                 </label>
                 <div className="flex items-center justify-between">
                   <span className="font-mono text-xs font-bold text-purple-600 dark:text-purple-400">
                     {INSTAGRAM_CONFIG.apiVersion}
                   </span>
                   <span className="text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-900/80 dark:text-purple-300 px-1.5 py-0.5 rounded">
-                    Latest Meta v26.0
+                    Meta v26.0 Active
                   </span>
                 </div>
               </div>
+            </div>
+
+            <div className="flex items-center justify-end pt-1">
+              <button
+                onClick={handleSaveAccount}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                {accountSaved ? <Check className="w-4 h-4 text-white" /> : <Instagram className="w-4 h-4 text-white" />}
+                <span>{accountSaved ? 'Connected Handle Saved!' : 'Save Connected Account'}</span>
+              </button>
             </div>
 
             {/* Supabase SQL Tables Schema Copy Box */}

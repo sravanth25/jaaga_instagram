@@ -23,6 +23,8 @@ interface SidebarProps {
   unreadMessagesCount?: number;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  connectedHandle?: string;
+  handleAvatar?: string;
 }
 
 interface NavItem {
@@ -35,9 +37,11 @@ interface NavItem {
 export const Sidebar: React.FC<SidebarProps> = ({
   currentScreen,
   onNavigate,
-  unreadMessagesCount = 2,
+  unreadMessagesCount = 0,
   collapsed = false,
   onToggleCollapse,
+  connectedHandle = 'jaaga.ai',
+  handleAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
 }) => {
   const navItems: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -133,12 +137,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="mt-auto p-4 border-t border-slate-100">
           <div className="flex items-center p-2 rounded-lg bg-slate-50 border border-slate-100">
             <img
-              src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"
+              src={handleAvatar}
               alt="avatar"
               className="w-8 h-8 rounded-full object-cover mr-3 border border-slate-200"
             />
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold text-slate-900 truncate">@design.master</p>
+              <p className="text-xs font-bold text-slate-900 truncate">@{connectedHandle}</p>
               <p className="text-[10px] text-green-600 flex items-center font-semibold">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1 animate-pulse" />
                 Meta API Live

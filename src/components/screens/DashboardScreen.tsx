@@ -26,6 +26,7 @@ interface DashboardScreenProps {
   onSelectAutomation?: (automation: Automation) => void;
   onSelectConversation?: (conversationId: string) => void;
   onStartLiveChat?: (userHandle?: string, initialText?: string) => void;
+  connectedHandle?: string;
 }
 
 export const DashboardScreen: React.FC<DashboardScreenProps> = ({
@@ -38,6 +39,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   onSelectAutomation,
   onSelectConversation,
   onStartLiveChat,
+  connectedHandle = 'jaaga.ai',
 }) => {
   const totalDMsSent = automations.reduce((acc, a) => acc + a.stats.dmsSent, 0);
   const totalCommentsReplied = automations.reduce((acc, a) => acc + a.stats.triggersCount, 0);
@@ -64,7 +66,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         <div>
           <div className="flex items-center space-x-2">
             <span className="bg-green-100 text-green-700 text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider">
-              Connected: @design.master
+              Connected: @{connectedHandle}
             </span>
           </div>
           <h2 className="text-xl font-bold text-slate-900 mt-1">
@@ -291,7 +293,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               Active Automations ({activeAutomations.length})
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Trigger flows currently running live on @design.master
+              Trigger flows currently running live on @{connectedHandle}
             </p>
           </div>
           <button

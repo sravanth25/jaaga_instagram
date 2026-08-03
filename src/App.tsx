@@ -86,7 +86,19 @@ export default function App() {
   });
 
   const [aiSettings, setAiSettings] = useState<AiSettings>(INITIAL_AI_SETTINGS);
-  const [appSettings, setAppSettings] = useState<AppSettings>(INITIAL_APP_SETTINGS);
+  const [appSettings, setAppSettings] = useState<AppSettings>(() => {
+    try {
+      const saved = localStorage.getItem('dmflow_app_settings');
+      return saved ? JSON.parse(saved) : INITIAL_APP_SETTINGS;
+    } catch {
+      return INITIAL_APP_SETTINGS;
+    }
+  });
+
+  // Sync appSettings to local persistence
+  useEffect(() => {
+    localStorage.setItem('dmflow_app_settings', JSON.stringify(appSettings));
+  }, [appSettings]);
 
   // Sync to local persistence & backend memory on change
   useEffect(() => {
@@ -152,7 +164,14 @@ export default function App() {
               if (!evt.senderId || !evt.messageText) continue;
               const rawHandle = String(evt.senderId).replace(/^@/, '').trim();
               if (!rawHandle) continue;
-              const cleanHandle = `@${rawHandle}`;
+              
+              let displayHandle = rawHandle;
+              if (/^\d+$/.test(displayHandle)) {
+                displayHandle = `ig_user_${displayHandle.slice(-4)}`;
+              } else if (displayHandle.startsWith('user_')) {
+                displayHandle = `ig_user_${displayHandle.replace('user_', '')}`;
+              }
+              const cleanHandle = `@${displayHandle.replace(/^@/, '')}`;
 
               // Find if conversation exists
               const existingIndex = updated.findIndex((c) => {
@@ -160,7 +179,8 @@ export default function App() {
                 return (
                   c.id === evt.senderId ||
                   c.id === `conv_${rawHandle}` ||
-                  cHandle === rawHandle.toLowerCase()
+                  cHandle === rawHandle.toLowerCase() ||
+                  cHandle === displayHandle.toLowerCase()
                 );
               });
 
@@ -567,6 +587,8 @@ export default function App() {
     setBroadcasts((prev) => [broadcast, ...prev]);
   };
 
+  const unreadMessagesCount = conversations.filter((c) => c.unread).length;
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-slate-900 selection:text-white">
       {/* Top Meta Policy Banner */}
@@ -587,6 +609,7 @@ export default function App() {
           setAutomationToEdit(null);
           setCurrentScreen('builder');
         }}
+        unreadMessagesCount={unreadMessagesCount}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -602,6 +625,9 @@ export default function App() {
           }}
           automationsCount={automations.length}
           leadsCount={leads.length}
+          unreadMessagesCount={unreadMessagesCount}
+          connectedHandle={appSettings.connectedHandle}
+          handleAvatar={appSettings.handleAvatar}
         />
 
         {/* Main Content Area */}
@@ -614,6 +640,7 @@ export default function App() {
               onNavigate={setCurrentScreen}
               onToggleAutomationStatus={handleToggleAutomationStatus}
               onStartLiveChat={handleStartLiveTestChat}
+              connectedHandle={appSettings.connectedHandle}
             />
           )}
 
@@ -637,6 +664,7 @@ export default function App() {
               onSaveAutomation={handleSaveAutomation}
               onNavigate={setCurrentScreen}
               onOpenConfirmation={handleOpenConfirmation}
+              connectedHandle={appSettings.connectedHandle}
             />
           )}
 
@@ -650,6 +678,13 @@ export default function App() {
               onUpdateLeadInfo={handleUpdateLeadInfo}
               onNavigate={setCurrentScreen}
               onStartLiveChat={handleStartLiveTestChat}
+              onClearDemoData={() => {
+                setConversations([]);
+                setSelectedConversationId(null);
+                try {
+                  localStorage.removeItem('dmflow_conversations');
+                } catch {}
+              }}
             />
           )}
 

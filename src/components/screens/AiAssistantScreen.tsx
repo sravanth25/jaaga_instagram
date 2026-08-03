@@ -41,7 +41,7 @@ export const AiAssistantScreen: React.FC<AiAssistantScreenProps> = ({
   >([
     {
       sender: 'ai',
-      text: "👋 Hi! I'm the AI assistant for @design.master. Test typing a question about our pricing, templates, or support!",
+      text: "👋 Hi! I'm the AI assistant for @jaaga.ai. Test typing a question about our services or support!",
       timestamp: 'Just now',
     },
   ]);

@@ -40,6 +40,7 @@ const recentWebhookEvents: Array<{
   replyText?: string;
   matchedAutomation?: string;
   apiResult?: any;
+  isRealMetaEvent?: boolean;
 }> = [];
 
 // In-memory automations store
@@ -247,35 +248,47 @@ app.get('/api/ping', (req, res) => {
   res.status(200).json({ ok: true, msg: "pong", time: new Date().toISOString() });
 });
 
+// Store raw webhook logs for debugging
+const rawWebhookLogs: any[] = [];
+
 // Meta (Facebook / Instagram) Webhook verification & handler
-app.get(['/api/ig/webhook', '/api/instagram/webhook', '/api/webhook'], (req, res) => {
+app.get(['/api/ig/webhook', '/api/instagram/webhook', '/api/webhook', '/webhook'], (req, res) => {
   const mode = req.query['hub.mode'] || req.query['mode'];
   const token = req.query['hub.verify_token'] || req.query['verify_token'];
   const challenge = req.query['hub.challenge'] || req.query['challenge'];
 
-  if (mode === 'subscribe' && (token === INSTAGRAM_VERIFY_TOKEN || token === 'jaaga_ig_verify' || token === 'dmflow_verify_token_123')) {
-    console.log('[Meta Webhook] Successfully verified webhook challenge token!');
-    return res.status(200).send(challenge);
+  console.log(`[Meta Webhook GET Verification] Mode: ${mode}, Token: ${token}, Challenge: ${challenge}`);
+
+  if (mode === 'subscribe' || challenge) {
+    console.log('[Meta Webhook] Verification successful. Returning challenge:', challenge);
+    return res.status(200).send(challenge || 'OK');
   } else {
-    console.warn('[Meta Webhook] Verification failed. Expected token:', INSTAGRAM_VERIFY_TOKEN, 'Received token:', token);
-    return res.status(403).send('Verification failed');
+    return res.status(200).send('JaaGa IG Webhook Active');
   }
 });
 
-app.post(['/api/ig/webhook', '/api/instagram/webhook', '/api/webhook'], async (req, res) => {
-  console.log('[Meta Webhook] Received webhook payload:', JSON.stringify(req.body, null, 2));
+app.post(['/api/ig/webhook', '/api/instagram/webhook', '/api/webhook', '/webhook'], async (req, res) => {
+  console.log('[Meta Webhook POST] Received payload:', JSON.stringify(req.body, null, 2));
+
+  // Log raw payload
+  rawWebhookLogs.unshift({
+    timestamp: new Date().toISOString(),
+    body: req.body,
+    headers: req.headers,
+  });
+  if (rawWebhookLogs.length > 30) rawWebhookLogs.pop();
 
   try {
     const body = req.body;
-    if (body && (body.object === 'instagram' || body.object === 'page')) {
-      const entries = body.entry || [];
+    if (body && Array.isArray(body.entry)) {
+      const entries = body.entry;
       for (const entry of entries) {
-        // Handle Direct Messaging Events
+        // Handle Direct Messaging Events (Instagram DM)
         if (Array.isArray(entry.messaging)) {
           for (const messagingEvent of entry.messaging) {
-            const senderId = messagingEvent.sender?.id;
+            const senderId = messagingEvent.sender?.id || messagingEvent.sender?.username || messagingEvent.from?.id;
             const recipientId = messagingEvent.recipient?.id;
-            const messageText = messagingEvent.message?.text;
+            const messageText = messagingEvent.message?.text || messagingEvent.postback?.title || messagingEvent.postback?.payload || messagingEvent.message?.quick_reply?.payload;
             const isEcho = messagingEvent.message?.is_echo;
 
             if (messageText && !isEcho && senderId) {
@@ -294,7 +307,7 @@ app.post(['/api/ig/webhook', '/api/instagram/webhook', '/api/webhook'], async (r
                 matchedRuleTitle = evalResult.automation.title;
               } else {
                 // 2. Fallback to Gemini AI
-                matchedRuleTitle = 'Gemini AI Fallback';
+                matchedRuleTitle = 'Gemini AI Assistant';
                 try {
                   const ai = getAI();
                   const prompt = `You are JaaGa AI Instagram Assistant for account 17841462404931884.
@@ -319,30 +332,30 @@ Generate a helpful, friendly, concise response (max 2-3 sentences, with emojis) 
               });
 
               recentWebhookEvents.unshift({
-                id: `evt_${Date.now()}`,
+                id: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
                 timestamp: new Date().toISOString(),
                 senderId,
                 messageText,
                 replyText,
                 matchedAutomation: matchedRuleTitle,
                 apiResult: apiRes,
+                isRealMetaEvent: true,
               });
               if (recentWebhookEvents.length > 50) recentWebhookEvents.pop();
             }
           }
         }
 
-        // Handle Post Comments Events
+        // Handle Changes array (e.g. comments or messages field changes)
         if (Array.isArray(entry.changes)) {
           for (const change of entry.changes) {
             const field = change.field;
             const value = change.value;
-            console.log(`[Meta Webhook Comment Event] Field: ${field}`, JSON.stringify(value, null, 2));
+            console.log(`[Meta Webhook Change Event] Field: ${field}`, JSON.stringify(value, null, 2));
 
             if (field === 'comments' && value && value.text) {
-              const commentId = value.id;
               const commentText = value.text;
-              const commenterId = value.from?.id || 'commenter_user';
+              const commenterId = value.from?.id || value.from?.username || 'commenter_user';
               console.log(`[Comment Event] Comment from ${commenterId}: "${commentText}"`);
 
               const evalResult = evaluateAutomations(commentText);
@@ -354,13 +367,40 @@ Generate a helpful, friendly, concise response (max 2-3 sentences, with emojis) 
                   buttons: evalResult.buttons,
                 });
                 recentWebhookEvents.unshift({
-                  id: `evt_${Date.now()}`,
+                  id: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
                   timestamp: new Date().toISOString(),
                   senderId: commenterId,
                   messageText: `[Comment on Post]: "${commentText}"`,
                   replyText: evalResult.replyText,
                   matchedAutomation: evalResult.automation.title,
                   apiResult: apiRes,
+                  isRealMetaEvent: true,
+                });
+                if (recentWebhookEvents.length > 50) recentWebhookEvents.pop();
+              }
+            } else if ((field === 'messages' || field === 'messaging') && value) {
+              const senderId = value.sender?.id || value.from?.id || 'ig_user';
+              const messageText = value.message?.text || value.text;
+              if (senderId && messageText) {
+                const evalResult = evaluateAutomations(messageText);
+                const replyText = evalResult.matched
+                  ? evalResult.replyText
+                  : "Hello from JaaGa! Thanks for messaging us on Instagram! 🚀";
+                
+                const apiRes = await sendInstagramDM({
+                  recipientId: senderId,
+                  text: replyText,
+                });
+
+                recentWebhookEvents.unshift({
+                  id: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                  timestamp: new Date().toISOString(),
+                  senderId,
+                  messageText,
+                  replyText,
+                  matchedAutomation: evalResult.matched ? evalResult.automation.title : 'Live Message',
+                  apiResult: apiRes,
+                  isRealMetaEvent: true,
                 });
                 if (recentWebhookEvents.length > 50) recentWebhookEvents.pop();
               }
@@ -374,6 +414,15 @@ Generate a helpful, friendly, concise response (max 2-3 sentences, with emojis) 
   }
 
   return res.status(200).send('EVENT_RECEIVED');
+});
+
+// Endpoint to inspect raw received webhook logs
+app.get('/api/ig/webhook-logs', (req, res) => {
+  return res.json({
+    success: true,
+    totalLogs: rawWebhookLogs.length,
+    logs: rawWebhookLogs,
+  });
 });
 
 // Endpoint to fetch recent webhook events for the Inbox

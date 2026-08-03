@@ -27,6 +27,7 @@ interface AutomationBuilderScreenProps {
   onSaveAutomation: (automation: Automation) => void;
   onNavigate: (screen: ScreenType) => void;
   onOpenConfirmation: (action: () => void, title: string, message: string) => void;
+  connectedHandle?: string;
 }
 
 export const AutomationBuilderScreen: React.FC<AutomationBuilderScreenProps> = ({
@@ -34,6 +35,7 @@ export const AutomationBuilderScreen: React.FC<AutomationBuilderScreenProps> = (
   onSaveAutomation,
   onNavigate,
   onOpenConfirmation,
+  connectedHandle = 'jaaga.ai',
 }) => {
   // Local state for building or editing automation
   const [title, setTitle] = useState(automationToEdit?.title || 'New Comment-to-DM Lead Magnet');
@@ -646,7 +648,7 @@ export const AutomationBuilderScreen: React.FC<AutomationBuilderScreenProps> = (
                     Require Follow First (Follow Gate)
                   </span>
                   <span className="text-[11px] text-slate-500">
-                    Prompts non-followers to follow @design.master before unlocking full link.
+                    Prompts non-followers to follow @{connectedHandle} before unlocking full link.
                   </span>
                 </div>
                 <input
@@ -706,7 +708,7 @@ export const AutomationBuilderScreen: React.FC<AutomationBuilderScreenProps> = (
                       alt="avatar"
                     />
                   </div>
-                  <span className="font-bold text-white">design.master</span>
+                  <span className="font-bold text-white">{connectedHandle}</span>
                 </div>
 
                 {/* Simulated Comment Trigger */}
@@ -723,7 +725,7 @@ export const AutomationBuilderScreen: React.FC<AutomationBuilderScreenProps> = (
                 {/* Simulated Automated Public Reply */}
                 <div className="pl-3 border-l-2 border-pink-500 space-y-1 py-1">
                   <div className="flex items-center gap-1 text-[10px] text-pink-400 font-bold">
-                    <span>@design.master</span>
+                    <span>@{connectedHandle}</span>
                     <span className="text-slate-500">• Auto-replied</span>
                   </div>
                   <p className="text-slate-300 text-[10px]">

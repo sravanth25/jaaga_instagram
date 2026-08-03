@@ -146,6 +146,6 @@ export async function verifyToken(): Promise<{ valid: boolean; expiresDays: numb
   return {
     valid: true,
     expiresDays: 59,
-    handle: 'design.master',
+    handle: 'jaaga.ai',
   };
 }
