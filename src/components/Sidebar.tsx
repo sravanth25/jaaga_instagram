@@ -2,6 +2,7 @@ import React from 'react';
 import { ScreenType } from '../types';
 import {
   LayoutDashboard,
+  Grid,
   Zap,
   Workflow,
   MessageSquare,
@@ -45,6 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const navItems: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'my-content', label: 'My Content', icon: Grid },
     { id: 'automations', label: 'Automations', icon: Zap },
     { id: 'builder', label: 'Flow Builder', icon: Workflow, badge: 'New' },
     { id: 'inbox', label: 'Unified Inbox', icon: MessageSquare, badge: unreadMessagesCount > 0 ? unreadMessagesCount : undefined },

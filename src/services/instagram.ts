@@ -149,3 +149,83 @@ export async function verifyToken(): Promise<{ valid: boolean; expiresDays: numb
     handle: 'jaaga.ai',
   };
 }
+
+export interface IGPostItem {
+  id: string;
+  caption: string;
+  media_type: 'IMAGE' | 'VIDEO' | 'CAROUSEL' | 'CAROUSEL_ALBUM' | string;
+  media_url: string;
+  thumbnail_url?: string;
+  permalink?: string;
+  timestamp: string;
+  like_count: number;
+  comments_count: number;
+  insights?: {
+    video_views?: number;
+  };
+}
+
+export interface IGAutomationRule {
+  id: string;
+  type?: string; // 'comment'
+  media_id?: string | null;
+  keywords: string[];
+  match_type?: 'contains' | 'exact' | 'any';
+  public_reply?: string | null;
+  dm_reply: string;
+  active: boolean;
+  name?: string;
+  created_at?: string;
+  dm_clicks?: number;
+}
+
+export async function fetchInstagramPosts(): Promise<IGPostItem[]> {
+  try {
+    const res = await fetch('/api/instagram/posts');
+    const json = await res.json();
+    return json.data || json.posts || [];
+  } catch (err) {
+    console.error('Failed to fetch Instagram posts:', err);
+    return [];
+  }
+}
+
+export async function fetchDmRules(): Promise<IGAutomationRule[]> {
+  try {
+    const res = await fetch('/api/ig/dm-rules');
+    const json = await res.json();
+    return json.rules || [];
+  } catch (err) {
+    console.error('Failed to fetch DM rules:', err);
+    return [];
+  }
+}
+
+export async function saveDmRule(rule: Partial<IGAutomationRule>): Promise<IGAutomationRule | null> {
+  try {
+    const res = await fetch('/api/ig/dm-rules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rule),
+    });
+    const json = await res.json();
+    return json.rule || null;
+  } catch (err) {
+    console.error('Failed to save DM rule:', err);
+    return null;
+  }
+}
+
+export async function deleteDmRule(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/ig/dm-rules/${id}`, {
+      method: 'DELETE',
+    });
+    const json = await res.json();
+    return Boolean(json.success);
+  } catch (err) {
+    console.error('Failed to delete DM rule:', err);
+    return false;
+  }
+}
+

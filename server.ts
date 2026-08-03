@@ -443,6 +443,197 @@ app.get(['/api/ig/webhook-events', '/api/ig/events'], (req, res) => {
   });
 });
 
+// Endpoint to fetch Instagram Media Posts
+app.get('/api/instagram/posts', async (req, res) => {
+  const token =
+    process.env.IG_ACCESS_TOKEN ||
+    process.env.INSTAGRAM_ACCESS_TOKEN ||
+    process.env.VITE_INSTAGRAM_ACCESS_TOKEN;
+  const accountId =
+    process.env.IG_ACCOUNT_ID ||
+    process.env.INSTAGRAM_ACCOUNT_ID ||
+    '17841462404931884';
+
+  const mockPosts = [
+    {
+      id: '18023948193049123',
+      caption: 'Discover Any Property with AI 🏠 Comment "PROPERTY" to get instant brochures and pricing straight to your DM!',
+      media_type: 'IMAGE',
+      media_url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=800&q=80',
+      thumbnail_url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=800&q=80',
+      permalink: 'https://instagram.com/p/C1234567890',
+      timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      like_count: 142,
+      comments_count: 38,
+      insights: { video_views: 0 },
+    },
+    {
+      id: '18023948193049124',
+      caption: 'Top 5 Real Estate Automations in 2026 🚀 Drop "INFO" below for our full step-by-step setup guide.',
+      media_type: 'VIDEO',
+      media_url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80',
+      thumbnail_url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80',
+      permalink: 'https://instagram.com/p/C1234567891',
+      timestamp: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+      like_count: 310,
+      comments_count: 64,
+      insights: { video_views: 1250 },
+    },
+    {
+      id: '18023948193049125',
+      caption: 'How to convert 80% of Instagram commenters into leads on autopilot 🔥 Comment "LINK" for free access.',
+      media_type: 'IMAGE',
+      media_url: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&w=800&q=80',
+      thumbnail_url: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&w=800&q=80',
+      permalink: 'https://instagram.com/p/C1234567892',
+      timestamp: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
+      like_count: 89,
+      comments_count: 22,
+      insights: { video_views: 0 },
+    },
+    {
+      id: '18023948193049126',
+      caption: 'Luxury Villa Virtual Tour 🌴 Comment "PRICING" to receive floor plans and current availability.',
+      media_type: 'VIDEO',
+      media_url: 'https://images.unsplash.com/photo-1613977257363-707ba9348227?auto=format&fit=crop&w=800&q=80',
+      thumbnail_url: 'https://images.unsplash.com/photo-1613977257363-707ba9348227?auto=format&fit=crop&w=800&q=80',
+      permalink: 'https://instagram.com/p/C1234567893',
+      timestamp: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+      like_count: 520,
+      comments_count: 115,
+      insights: { video_views: 3840 },
+    },
+    {
+      id: '18023948193049127',
+      caption: 'Automate your Instagram Inbox with JaaGa AI! Comment "DEMO" to test the instant DM flow.',
+      media_type: 'IMAGE',
+      media_url: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=800&q=80',
+      thumbnail_url: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=800&q=80',
+      permalink: 'https://instagram.com/p/C1234567894',
+      timestamp: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
+      like_count: 204,
+      comments_count: 47,
+      insights: { video_views: 0 },
+    },
+  ];
+
+  if (!token) {
+    return res.json({ data: mockPosts });
+  }
+
+  try {
+    const url = `https://graph.instagram.com/v23.0/${accountId}/media?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count&limit=50&access_token=${token}`;
+    const response = await fetch(url);
+    const json = await response.json();
+
+    if (json.data && Array.isArray(json.data) && json.data.length > 0) {
+      return res.json({ data: json.data });
+    }
+    return res.json({ data: mockPosts });
+  } catch (err) {
+    return res.json({ data: mockPosts });
+  }
+});
+
+// Endpoints for ig_dm_rules management
+app.get('/api/ig/dm-rules', async (req, res) => {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+  if (supabaseUrl && supabaseKey) {
+    try {
+      const response = await fetch(`${supabaseUrl}/rest/v1/ig_dm_rules?select=*&order=created_at.desc`, {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+      });
+      if (response.ok) {
+        const rules = await response.json();
+        return res.json({ success: true, rules });
+      }
+    } catch (err: any) {
+      console.warn('Failed to fetch ig_dm_rules from Supabase:', err);
+    }
+  }
+
+  return res.json({ success: true, rules: syncedAutomations });
+});
+
+app.post('/api/ig/dm-rules', async (req, res) => {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const ruleData = req.body || {};
+
+  const payload = {
+    id: ruleData.id || `rule_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    type: ruleData.type || 'comment',
+    media_id: ruleData.media_id || ruleData.mediaId || null,
+    keywords: Array.isArray(ruleData.keywords) ? ruleData.keywords : [],
+    match_type: ruleData.match_type || ruleData.matchType || 'contains',
+    public_reply: ruleData.public_reply || ruleData.publicReply || null,
+    dm_reply: ruleData.dm_reply || ruleData.dmReply || ruleData.dmMessageText || '',
+    active: ruleData.active !== undefined ? Boolean(ruleData.active) : true,
+    name: ruleData.name || ruleData.title || 'Post Automation Rule',
+  };
+
+  // Update in-memory fallback store
+  const existingIdx = syncedAutomations.findIndex((r) => r.id === payload.id || (r.media_id && r.media_id === payload.media_id));
+  if (existingIdx >= 0) {
+    syncedAutomations[existingIdx] = { ...syncedAutomations[existingIdx], ...payload };
+  } else {
+    syncedAutomations.unshift(payload);
+  }
+
+  if (supabaseUrl && supabaseKey) {
+    try {
+      const response = await fetch(`${supabaseUrl}/rest/v1/ig_dm_rules`, {
+        method: 'POST',
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates,return=representation',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return res.json({ success: true, rule: data[0] || payload });
+      }
+    } catch (err: any) {
+      console.warn('Supabase ig_dm_rules save error:', err);
+    }
+  }
+
+  return res.json({ success: true, rule: payload });
+});
+
+app.delete('/api/ig/dm-rules/:id', async (req, res) => {
+  const { id } = req.params;
+  syncedAutomations = syncedAutomations.filter((r) => r.id !== id);
+
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+  if (supabaseUrl && supabaseKey) {
+    try {
+      await fetch(`${supabaseUrl}/rest/v1/ig_dm_rules?id=eq.${id}`, {
+        method: 'DELETE',
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+      });
+    } catch (err: any) {
+      console.warn('Supabase ig_dm_rules delete error:', err);
+    }
+  }
+
+  return res.json({ success: true, deletedId: id });
+});
+
 // Endpoint to fetch ig_messages from Supabase REST API directly
 app.get(['/api/ig/supabase-messages', '/api/ig/messages'], async (req, res) => {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;

@@ -1,7 +1,3 @@
-// Replace api/ig/webhook.js with this file.
-// Same working AI reply as before, PLUS it stores every inbound and outbound
-// message into the ig_messages table (via Supabase REST + the service key).
-
 import { GoogleGenAI } from '@google/genai';
 import { DEFAULT_JAAGA_SYSTEM_PROMPT } from './ai-test.js';
 
@@ -41,6 +37,56 @@ async function fetchUsername(igsid, token, base) {
   }
 }
 
+async function fetchActiveDmRules() {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return [];
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/ig_dm_rules?select=*&active=eq.true`, {
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+      },
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (e) {
+    console.error('[FETCH DM RULES EXCEPTION]', e?.message || e);
+  }
+  return [];
+}
+
+function findMatchingRule(rules, commentText, mediaId) {
+  const cleanComment = (commentText || '').trim().toLowerCase();
+  for (const rule of rules) {
+    if (rule.active === false) continue;
+    if (rule.type && rule.type !== 'comment') continue;
+
+    // Check media_id scope
+    if (rule.media_id && mediaId && String(rule.media_id) !== String(mediaId)) {
+      continue;
+    }
+
+    const keywords = Array.isArray(rule.keywords)
+      ? rule.keywords
+      : (typeof rule.keywords === 'string' ? rule.keywords.split(',').map(s => s.trim()) : []);
+    const matchType = rule.match_type || 'contains';
+
+    if (keywords.length === 0 || matchType === 'any') {
+      return rule;
+    }
+
+    const isMatch = keywords.some((kw) => {
+      const cleanKw = String(kw).trim().toLowerCase();
+      if (!cleanKw) return false;
+      if (matchType === 'exact') return cleanComment === cleanKw;
+      return cleanComment.includes(cleanKw);
+    });
+
+    if (isMatch) return rule;
+  }
+  return null;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -77,6 +123,8 @@ export default async function handler(req, res) {
 
       if (body && (body.object === 'instagram' || body.object === 'page')) {
         for (const entry of body.entry || []) {
+
+          // 1. Direct Messaging events
           for (const ev of entry.messaging || []) {
             const senderId = ev.sender?.id;
             const text = ev.message?.text;
@@ -84,13 +132,10 @@ export default async function handler(req, res) {
             if (!text || isEcho || !senderId || senderId === accountId) continue;
 
             console.log(`[DM IN] from ${senderId}: "${text}"`);
-
             const username = await fetchUsername(senderId, token, base);
 
-            // 1) store the incoming message
             await storeMessage({ igsid: senderId, username, direction: 'in', text, is_ai: false });
 
-            // 2) build a reply (AI if configured, else fallback)
             let reply =
               'Thanks for messaging JaaGa! Our team will get back to you shortly. Visit https://www.jaaga.ai or call +91 88851 66880.';
             let isAi = false;
@@ -112,7 +157,6 @@ export default async function handler(req, res) {
               }
             }
 
-            // 3) send the reply
             if (token) {
               const resp = await fetch(`${base}/${accountId}/messages`, {
                 method: 'POST',
@@ -120,17 +164,102 @@ export default async function handler(req, res) {
                 body: JSON.stringify({ recipient: { id: senderId }, message: { text: reply } }),
               });
               const data = await resp.json().catch(() => ({}));
-              console.log('[IG SEND RESULT]', resp.status, JSON.stringify(data));
+              console.log('[IG DM SEND RESULT]', resp.status, JSON.stringify(data));
 
-              // 4) store the outgoing reply
               await storeMessage({ igsid: senderId, username, direction: 'out', text: reply, is_ai: isAi });
-            } else {
-              console.error('[SEND ABORTED] no access token env var found');
             }
           }
 
+          // 2. Change events (Comments handling per Section E)
           for (const change of entry.changes || []) {
-            console.log('[CHANGE]', change.field, JSON.stringify(change.value));
+            console.log('[CHANGE FIELD]', change.field, JSON.stringify(change.value));
+
+            if (change.field === 'comments' && change.value) {
+              const val = change.value;
+              const commentId = val.id;
+              const commentText = val.text || '';
+              const commenterId = val.from?.id;
+              const commenterName = val.from?.username || commenterId || 'user';
+              const mediaId = val.media?.id || val.media_id;
+
+              // Section E1: Skip if commenter is our own account (avoid loops)
+              if (commenterId === accountId) {
+                console.log('[COMMENT SKIP] Comment from page owner');
+                continue;
+              }
+
+              console.log(`[COMMENT IN] id=${commentId} from=${commenterName} media=${mediaId} text="${commentText}"`);
+
+              // Section E2: Find active rule
+              const activeRules = await fetchActiveDmRules();
+              const matchedRule = findMatchingRule(activeRules, commentText, mediaId);
+
+              if (matchedRule) {
+                console.log(`[RULE MATCHED] Rule "${matchedRule.name || matchedRule.id}" for comment "${commentText}"`);
+
+                // Section E3: Public comment reply
+                if (matchedRule.public_reply) {
+                  const variations = String(matchedRule.public_reply)
+                    .split(/\n|\|/)
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                  const publicMsg = variations[Math.floor(Math.random() * variations.length)] || matchedRule.public_reply;
+
+                  if (token && commentId) {
+                    try {
+                      const pubResp = await fetch(`${base}/${commentId}/replies`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({ message: publicMsg }),
+                      });
+                      const pubData = await pubResp.json().catch(() => ({}));
+                      console.log('[PUBLIC COMMENT REPLY RESULT]', pubResp.status, JSON.stringify(pubData));
+                    } catch (pubErr) {
+                      console.error('[PUBLIC COMMENT REPLY ERROR]', pubErr);
+                    }
+                  }
+                }
+
+                // Section E4: DM message private reply to commenter
+                if (matchedRule.dm_reply) {
+                  const dmText = matchedRule.dm_reply;
+
+                  if (token && commentId) {
+                    try {
+                      const dmResp = await fetch(`${base}/${accountId}/messages`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({
+                          recipient: { comment_id: commentId },
+                          message: { text: dmText },
+                        }),
+                      });
+                      const dmData = await dmResp.json().catch(() => ({}));
+                      console.log('[DM PRIVATE REPLY RESULT]', dmResp.status, JSON.stringify(dmData));
+                    } catch (dmErr) {
+                      console.error('[DM PRIVATE REPLY ERROR]', dmErr);
+                    }
+                  }
+
+                  // Store message for Inbox tracking
+                  await storeMessage({
+                    igsid: commenterId || commentId,
+                    username: commenterName,
+                    direction: 'out',
+                    text: `[Auto-DM via Comment]: ${dmText}`,
+                    is_ai: false,
+                  });
+                }
+              } else {
+                console.log('[COMMENT NO MATCH] No active rule matched for comment.');
+              }
+            }
           }
         }
       }

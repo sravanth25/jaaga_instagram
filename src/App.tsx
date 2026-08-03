@@ -35,6 +35,7 @@ import { ConfirmationModal } from './components/ConfirmationModal';
 
 // Screens
 import { DashboardScreen } from './components/screens/DashboardScreen';
+import { MyContentScreen } from './components/screens/MyContentScreen';
 import { AutomationsListScreen } from './components/screens/AutomationsListScreen';
 import { AutomationBuilderScreen } from './components/screens/AutomationBuilderScreen';
 import { InboxScreen } from './components/screens/InboxScreen';
@@ -834,6 +835,8 @@ export default function App() {
               connectedHandle={appSettings.connectedHandle}
             />
           )}
+
+          {currentScreen === 'my-content' && <MyContentScreen />}
 
           {currentScreen === 'automations' && (
             <AutomationsListScreen

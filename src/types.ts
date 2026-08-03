@@ -1,5 +1,6 @@
 export type ScreenType =
   | 'dashboard'
+  | 'my-content'
   | 'automations'
   | 'builder'
   | 'inbox'

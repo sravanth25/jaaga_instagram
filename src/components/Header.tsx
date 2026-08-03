@@ -20,6 +20,7 @@ interface HeaderProps {
 
 const SCREEN_TITLES: Record<ScreenType, { title: string; subtitle: string }> = {
   dashboard: { title: 'Dashboard', subtitle: 'Overview of DM automations, activity & lead conversions' },
+  'my-content': { title: 'My Content', subtitle: 'Manage Instagram posts, reels & comment-to-DM automations' },
   automations: { title: 'Automations', subtitle: 'Manage your active Instagram comment & DM trigger flows' },
   builder: { title: 'Automation Builder', subtitle: 'Design visual Comment-to-DM triggers & automated message flows' },
   inbox: { title: 'Unified Inbox', subtitle: 'Manage Instagram DM threads with automated or human takeover' },
