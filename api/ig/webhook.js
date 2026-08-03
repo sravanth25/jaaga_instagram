@@ -191,13 +191,36 @@ export default async function handler(req, res) {
               console.log('[COMMENT PUBLIC REPLY]', rr.status, JSON.stringify(await rr.json().catch(() => ({}))));
             }
 
-            // private DM to the commenter
+            // private DM to the commenter (with buttons if the automation has them)
             const dmText = rule.dm_message_text;
-            if (dmText) {
+            const btns = Array.isArray(rule.dm_buttons)
+              ? rule.dm_buttons.filter((b) => b && b.url).slice(0, 3) // Instagram allows max 3 buttons
+              : [];
+            if (dmText || btns.length) {
+              let message;
+              if (btns.length) {
+                // Button template: text + clickable web_url buttons (title max 20 chars)
+                message = {
+                  attachment: {
+                    type: 'template',
+                    payload: {
+                      template_type: 'button',
+                      text: String(dmText || 'Here are the details you requested:').slice(0, 640),
+                      buttons: btns.map((b) => ({
+                        type: 'web_url',
+                        url: b.url,
+                        title: String(b.label || b.title || 'Open').slice(0, 20),
+                      })),
+                    },
+                  },
+                };
+              } else {
+                message = { text: dmText };
+              }
               const dr = await fetch(`${BASE}/${accountId}/messages`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ recipient: { comment_id: commentId }, message: { text: dmText } }),
+                body: JSON.stringify({ recipient: { comment_id: commentId }, message }),
               });
               const drData = await dr.json().catch(() => ({}));
               console.log('[COMMENT DM]', dr.status, JSON.stringify(drData));
