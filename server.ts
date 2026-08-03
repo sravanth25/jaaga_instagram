@@ -122,7 +122,27 @@ async function sendInstagramDM({
       return { success: true, data, endpointUsed: primaryUrl };
     } else {
       console.error('[Instagram DM Graph API] Meta API error:', data);
-      return { success: false, error: data?.error?.message || 'Meta API returned error', details: data, endpointUsed: primaryUrl };
+      
+      let hint = '';
+      const subcode = data?.error?.error_subcode;
+      const errType = data?.error?.type;
+      const errMsg = data?.error?.message || '';
+
+      if (subcode === 2534014 || recipientId === targetAccountId || errMsg.includes('2534014')) {
+        hint = 'Recipient ID is invalid or represents your own Instagram Account ID (17841462404931884). Meta Instagram Graph API requires a scoped user IGSID/PSID (received when a customer messages your page/account first). You cannot send direct messages to your own account ID.';
+      } else if (errType === 'OAuthException' || errMsg.toLowerCase().includes('token') || errMsg.toLowerCase().includes('session')) {
+        hint = 'Authentication token error. Ensure your Instagram Access Token has instagram_manage_messages permissions and is linked to the Instagram Business Account.';
+      }
+
+      return {
+        success: false,
+        error: data?.error?.message || 'Meta API returned error',
+        subcode,
+        errorType: errType,
+        hint,
+        details: data,
+        endpointUsed: primaryUrl,
+      };
     }
   } catch (err: any) {
     console.error('[Instagram DM Graph API] Exception sending DM:', err);

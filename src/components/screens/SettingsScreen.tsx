@@ -58,7 +58,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [testLoading, setTestLoading] = useState(false);
 
   // Meta Graph API Tester State
-  const [graphRecipientId, setGraphRecipientId] = useState('17841462404931884');
+  const [graphRecipientId, setGraphRecipientId] = useState('');
   const [graphMessageText, setGraphMessageText] = useState('hi');
   const [graphTestLoading, setGraphTestLoading] = useState(false);
   const [graphTestResult, setGraphTestResult] = useState<any>(null);
@@ -412,6 +412,9 @@ CREATE POLICY "Allow public insert/update ig_settings" ON public.ig_settings FOR
                     <span className="font-bold text-slate-700 dark:text-slate-300">Health Check Endpoint:</span>{' '}
                     <code className="text-purple-600 dark:text-purple-400 font-mono">https://jaaga-instagram.vercel.app/api/ping</code>
                   </p>
+                  <div className="p-2.5 bg-purple-100/70 dark:bg-purple-900/40 rounded-lg text-[11px] text-purple-950 dark:text-purple-200 leading-normal">
+                    <span className="font-bold">⚡ Meta App Mode Notice:</span> If your Meta App is in <em>Development Mode</em>, Meta only delivers webhook events for DMs from accounts added as <strong>App Admins/Testers</strong> in Meta Developer Portal. In <em>Live / Published Mode</em>, Meta delivers DMs from <strong>all public Instagram accounts</strong>.
+                  </div>
                 </div>
               </div>
             </div>
@@ -447,13 +450,13 @@ CREATE POLICY "Allow public insert/update ig_settings" ON public.ig_settings FOR
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
-                    <label className="text-[10px] text-slate-500 block mb-0.5 font-medium">Recipient PSID / IGSID</label>
+                    <label className="text-[10px] text-slate-500 block mb-0.5 font-medium">Customer PSID / IGSID</label>
                     <input
                       type="text"
                       value={graphRecipientId}
                       onChange={(e) => setGraphRecipientId(e.target.value)}
-                      placeholder="17841462404931884 or User PSID"
-                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white"
+                      placeholder="e.g. 178414000000000 (User IGSID)"
+                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white font-mono"
                     />
                   </div>
                   <div>
@@ -468,6 +471,10 @@ CREATE POLICY "Allow public insert/update ig_settings" ON public.ig_settings FOR
                   </div>
                 </div>
 
+                <p className="text-[10px] text-slate-500 italic">
+                  * Note: In Meta Graph API, recipient must be a customer&apos;s scoped IGSID/PSID from an incoming message event (not your own Account ID 17841462404931884).
+                </p>
+
                 <button
                   type="button"
                   onClick={handleSendGraphApiDm}
@@ -479,13 +486,25 @@ CREATE POLICY "Allow public insert/update ig_settings" ON public.ig_settings FOR
                 </button>
 
                 {graphTestResult && (
-                  <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-pink-200 dark:border-pink-900 text-xs space-y-1 mt-2">
+                  <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-pink-200 dark:border-pink-900 text-xs space-y-2 mt-2">
                     <div className="flex items-center justify-between font-bold">
                       <span className={graphTestResult.success ? 'text-emerald-600' : 'text-rose-600'}>
                         {graphTestResult.success ? '✓ Graph API Request Succeeded' : '⚠️ Graph API Notice / Response'}
                       </span>
                       <span className="text-[10px] font-mono text-slate-400">v26.0</span>
                     </div>
+
+                    {(graphTestResult.result?.hint || graphTestResult.hint) && (
+                      <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-lg text-amber-900 dark:text-amber-200 text-[11px] space-y-1">
+                        <p className="font-bold flex items-center gap-1">
+                          💡 Meta Diagnostic Hint:
+                        </p>
+                        <p className="leading-snug">
+                          {graphTestResult.result?.hint || graphTestResult.hint}
+                        </p>
+                      </div>
+                    )}
+
                     <pre className="text-[10px] font-mono bg-slate-900 text-slate-200 p-2 rounded-lg overflow-x-auto whitespace-pre-wrap">
                       {JSON.stringify(graphTestResult, null, 2)}
                     </pre>
