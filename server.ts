@@ -342,17 +342,27 @@ Generate a helpful, friendly, concise response (max 2-3 sentences, with emojis) 
             if (field === 'comments' && value && value.text) {
               const commentId = value.id;
               const commentText = value.text;
-              const commenterId = value.from?.id;
+              const commenterId = value.from?.id || 'commenter_user';
               console.log(`[Comment Event] Comment from ${commenterId}: "${commentText}"`);
 
               const evalResult = evaluateAutomations(commentText);
               if (evalResult.matched && commenterId) {
                 console.log(`[Comment Auto-DM Triggered] Flow: "${evalResult.automation.title}"`);
-                await sendInstagramDM({
+                const apiRes = await sendInstagramDM({
                   recipientId: commenterId,
                   text: evalResult.replyText,
                   buttons: evalResult.buttons,
                 });
+                recentWebhookEvents.unshift({
+                  id: `evt_${Date.now()}`,
+                  timestamp: new Date().toISOString(),
+                  senderId: commenterId,
+                  messageText: `[Comment on Post]: "${commentText}"`,
+                  replyText: evalResult.replyText,
+                  matchedAutomation: evalResult.automation.title,
+                  apiResult: apiRes,
+                });
+                if (recentWebhookEvents.length > 50) recentWebhookEvents.pop();
               }
             }
           }
@@ -364,6 +374,88 @@ Generate a helpful, friendly, concise response (max 2-3 sentences, with emojis) 
   }
 
   return res.status(200).send('EVENT_RECEIVED');
+});
+
+// Endpoint to fetch recent webhook events for the Inbox
+app.get(['/api/ig/webhook-events', '/api/ig/events'], (req, res) => {
+  return res.json({
+    success: true,
+    count: recentWebhookEvents.length,
+    events: recentWebhookEvents,
+  });
+});
+
+// Endpoint to post external webhook event (e.g. from Vercel function or webhook proxy)
+app.post('/api/ig/webhook-events', (req, res) => {
+  const { senderId, messageText, replyText, matchedAutomation } = req.body || {};
+  if (senderId && messageText) {
+    const newEvt = {
+      id: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toISOString(),
+      senderId,
+      messageText,
+      replyText: replyText || 'Automated Response Sent',
+      matchedAutomation: matchedAutomation || 'Webhook Event',
+    };
+    recentWebhookEvents.unshift(newEvt);
+    if (recentWebhookEvents.length > 50) recentWebhookEvents.pop();
+    return res.json({ success: true, event: newEvt });
+  }
+  return res.status(400).json({ success: false, error: 'senderId and messageText required' });
+});
+
+// Endpoint to simulate an incoming DM from a customer (e.g., "hi" or "link")
+app.post('/api/ig/simulate-incoming-dm', async (req, res) => {
+  try {
+    const { senderId, userHandle, messageText } = req.body || {};
+    const text = (messageText || 'hi').trim();
+    const handle = (userHandle || senderId || `user_${Math.floor(1000 + Math.random() * 9000)}`).replace(/^@/, '');
+
+    const evalResult = evaluateAutomations(text);
+    let replyText = '';
+    let matchedRuleTitle = '';
+
+    if (evalResult.matched) {
+      replyText = evalResult.replyText;
+      matchedRuleTitle = evalResult.automation.title;
+    } else {
+      matchedRuleTitle = 'Gemini AI Assistant';
+      try {
+        const ai = getAI();
+        const prompt = `You are JaaGa AI Instagram Assistant. The user messaged: "${text}". Generate a helpful, friendly, concise response (2-3 sentences with emojis) welcoming them to JaaGa AI.`;
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.6-flash',
+          contents: prompt,
+        });
+        replyText = response.text?.replace(/\*/g, '').trim() || "Hello, welcome to JaaGa! We specialize in Property Documents and Services across Telangana. Visit https://www.jaaga.ai or call +91 88851 66880 🚀";
+      } catch (err) {
+        replyText = "Hello, welcome to JaaGa! We specialize in Property Documents and Services across Telangana. Visit https://www.jaaga.ai or call +91 88851 66880 🚀";
+      }
+    }
+
+    const newEvt = {
+      id: `evt_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      senderId: handle,
+      messageText: text,
+      replyText,
+      matchedAutomation: matchedRuleTitle,
+    };
+
+    recentWebhookEvents.unshift(newEvt);
+    if (recentWebhookEvents.length > 50) recentWebhookEvents.pop();
+
+    return res.json({
+      success: true,
+      senderId: handle,
+      messageText: text,
+      replyText,
+      matchedAutomation: matchedRuleTitle,
+      event: newEvt,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // Endpoint to sync client-side automations into server memory

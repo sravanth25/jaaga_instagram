@@ -3,6 +3,7 @@ import {
   ScreenType,
   Automation,
   Conversation,
+  Message,
   LeadContact,
   Broadcast,
   AiSettings,
@@ -125,6 +126,143 @@ export default function App() {
     loadSupabaseLive();
   }, []);
 
+  // Poll backend webhook events every 3 seconds to keep Inbox conversations in real-time sync
+  useEffect(() => {
+    function getHash(str: string) {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = (hash << 5) - hash + str.charCodeAt(i);
+        hash |= 0;
+      }
+      return Math.abs(hash);
+    }
+
+    const pollWebhookEvents = async () => {
+      try {
+        const res = await fetch('/api/ig/webhook-events');
+        const data = await res.json();
+        if (data?.success && Array.isArray(data.events) && data.events.length > 0) {
+          const events = data.events;
+
+          setConversations((prevConvs) => {
+            let updated = [...prevConvs];
+            let changed = false;
+
+            for (const evt of events) {
+              if (!evt.senderId || !evt.messageText) continue;
+              const rawHandle = String(evt.senderId).replace(/^@/, '').trim();
+              if (!rawHandle) continue;
+              const cleanHandle = `@${rawHandle}`;
+
+              // Find if conversation exists
+              const existingIndex = updated.findIndex((c) => {
+                const cHandle = c.userHandle.replace(/^@/, '').toLowerCase();
+                return (
+                  c.id === evt.senderId ||
+                  c.id === `conv_${rawHandle}` ||
+                  cHandle === rawHandle.toLowerCase()
+                );
+              });
+
+              if (existingIndex >= 0) {
+                const existingConv = updated[existingIndex];
+                const hasUserMsg = existingConv.messages.some(
+                  (m) => m.text === evt.messageText
+                );
+
+                if (!hasUserMsg) {
+                  changed = true;
+                  const newMsgs = [...existingConv.messages];
+                  newMsgs.push({
+                    id: `m_user_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                    sender: 'user',
+                    text: evt.messageText,
+                    timestamp: 'Just now',
+                  });
+
+                  if (evt.replyText) {
+                    newMsgs.push({
+                      id: `m_bot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                      sender: 'bot',
+                      text: evt.replyText,
+                      timestamp: 'Just now',
+                    });
+                  }
+
+                  updated[existingIndex] = {
+                    ...existingConv,
+                    lastMessage: evt.replyText || evt.messageText,
+                    timestamp: 'Just now',
+                    unread: true,
+                    messages: newMsgs,
+                    tags: Array.from(
+                      new Set([
+                        ...(existingConv.tags || []),
+                        evt.matchedAutomation || 'Instagram DM',
+                      ])
+                    ),
+                  };
+                }
+              } else {
+                // Create a brand new conversation
+                changed = true;
+                const newConvId = `conv_${rawHandle}`;
+                const initialMsgs: Message[] = [
+                  {
+                    id: `m_user_${Date.now()}_1`,
+                    sender: 'user',
+                    text: evt.messageText,
+                    timestamp: 'Just now',
+                  },
+                ];
+
+                if (evt.replyText) {
+                  initialMsgs.push({
+                    id: `m_bot_${Date.now()}_2`,
+                    sender: 'bot',
+                    text: evt.replyText,
+                    timestamp: 'Just now',
+                  });
+                }
+
+                const newConv: Conversation = {
+                  id: newConvId,
+                  userHandle: rawHandle,
+                  userName: cleanHandle,
+                  avatar: `https://images.unsplash.com/photo-${1534528741775 + (getHash(rawHandle) % 500)}?auto=format&fit=crop&w=150&q=80`,
+                  followerCount: '1.2k',
+                  lastMessage: evt.replyText || evt.messageText,
+                  timestamp: 'Just now',
+                  unread: true,
+                  mode: 'automated',
+                  tags: [evt.matchedAutomation || 'Instagram DM', 'Live Lead'],
+                  leadInfo: {
+                    email: '',
+                    phone: '',
+                    status: 'new',
+                    capturedAt: new Date().toISOString().split('T')[0],
+                  },
+                  triggerHistory: [],
+                  messages: initialMsgs,
+                };
+
+                updated = [newConv, ...updated];
+              }
+            }
+
+            return changed ? updated : prevConvs;
+          });
+        }
+      } catch (err) {
+        // quiet catch
+      }
+    };
+
+    pollWebhookEvents();
+    const interval = setInterval(pollWebhookEvents, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Active Selections
   const [automationToEdit, setAutomationToEdit] = useState<Automation | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(
@@ -217,13 +355,50 @@ export default function App() {
 
     const targetConv = conversations.find((c) => c.id === id);
     if (targetConv) {
-      // Dispatch live DM via Instagram Graph API v25.0
+      // Dispatch live DM via Instagram Graph API
       sendDirectMessage({
         recipientId: targetConv.userHandle.replace(/^@/, '') || '17841462404931884',
         message: text,
       }).catch((err) => {
         console.warn('Graph API sendDirectMessage background result:', err);
       });
+
+      // If in automated mode and human sent message, trigger automated response simulation
+      if (targetConv.mode === 'automated' && sender === 'human') {
+        fetch('/api/ig/simulate-incoming-dm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            senderId: targetConv.userHandle,
+            messageText: text,
+          }),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (data?.replyText) {
+              const botMsg = {
+                id: `m_bot_${Date.now()}`,
+                sender: 'bot' as const,
+                text: data.replyText,
+                timestamp: 'Just now',
+              };
+              setConversations((prev) =>
+                prev.map((c) => {
+                  if (c.id === id) {
+                    return {
+                      ...c,
+                      lastMessage: data.replyText,
+                      timestamp: 'Just now',
+                      messages: [...c.messages, newMsg, botMsg],
+                    };
+                  }
+                  return c;
+                })
+              );
+            }
+          })
+          .catch(() => {});
+      }
     }
 
     setConversations((prev) =>
@@ -284,6 +459,7 @@ export default function App() {
               status: 'New',
               tags,
               capturedAt: new Date().toISOString().split('T')[0],
+              lastActive: new Date().toISOString().split('T')[0],
             },
             ...prev,
           ];
@@ -301,39 +477,89 @@ export default function App() {
 
   const handleStartLiveTestChat = (userHandle?: string, initialText?: string) => {
     const handle = userHandle || `user_${Math.floor(1000 + Math.random() * 9000)}`;
-    const text = initialText || 'Hello, I have a question about your services!';
+    const text = initialText || 'hi';
     const newConvId = `conv_${Date.now()}`;
-    const newConv: Conversation = {
-      id: newConvId,
-      userHandle: handle,
-      userName: `@${handle}`,
-      avatar: `https://images.unsplash.com/photo-${1534528741775 + Math.floor(Math.random() * 500)}?auto=format&fit=crop&w=150&q=80`,
-      followerCount: '1.2k',
-      lastMessage: text,
-      timestamp: 'Just now',
-      unread: true,
-      mode: 'automated',
-      tags: ['Live Lead'],
-      leadInfo: {
-        email: '',
-        phone: '',
-        status: 'new',
-        capturedAt: new Date().toISOString(),
-      },
-      triggerHistory: [],
-      messages: [
-        {
-          id: `m_${Date.now()}`,
-          sender: 'user',
-          text,
-          timestamp: 'Just now',
-        },
-      ],
-    };
 
-    setConversations((prev) => [newConv, ...prev]);
-    setSelectedConversationId(newConvId);
-    setCurrentScreen('inbox');
+    // Call simulate-incoming-dm on server
+    fetch('/api/ig/simulate-incoming-dm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ senderId: handle, messageText: text }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        const replyText = data?.replyText || 'Hello, welcome to JaaGa!';
+        const newConv: Conversation = {
+          id: newConvId,
+          userHandle: handle,
+          userName: `@${handle}`,
+          avatar: `https://images.unsplash.com/photo-${1534528741775 + Math.floor(Math.random() * 500)}?auto=format&fit=crop&w=150&q=80`,
+          followerCount: '1.2k',
+          lastMessage: replyText,
+          timestamp: 'Just now',
+          unread: true,
+          mode: 'automated',
+          tags: ['Live DM', data?.matchedAutomation || 'Instagram DM'],
+          leadInfo: {
+            email: '',
+            phone: '',
+            status: 'new',
+            capturedAt: new Date().toISOString(),
+          },
+          triggerHistory: [],
+          messages: [
+            {
+              id: `m_${Date.now()}_1`,
+              sender: 'user',
+              text,
+              timestamp: 'Just now',
+            },
+            {
+              id: `m_${Date.now()}_2`,
+              sender: 'bot',
+              text: replyText,
+              timestamp: 'Just now',
+            },
+          ],
+        };
+
+        setConversations((prev) => [newConv, ...prev]);
+        setSelectedConversationId(newConvId);
+        setCurrentScreen('inbox');
+      })
+      .catch(() => {
+        const newConv: Conversation = {
+          id: newConvId,
+          userHandle: handle,
+          userName: `@${handle}`,
+          avatar: `https://images.unsplash.com/photo-${1534528741775 + Math.floor(Math.random() * 500)}?auto=format&fit=crop&w=150&q=80`,
+          followerCount: '1.2k',
+          lastMessage: text,
+          timestamp: 'Just now',
+          unread: true,
+          mode: 'automated',
+          tags: ['Live Lead'],
+          leadInfo: {
+            email: '',
+            phone: '',
+            status: 'new',
+            capturedAt: new Date().toISOString(),
+          },
+          triggerHistory: [],
+          messages: [
+            {
+              id: `m_${Date.now()}`,
+              sender: 'user',
+              text,
+              timestamp: 'Just now',
+            },
+          ],
+        };
+
+        setConversations((prev) => [newConv, ...prev]);
+        setSelectedConversationId(newConvId);
+        setCurrentScreen('inbox');
+      });
   };
 
   // Broadcast Handler
@@ -427,7 +653,7 @@ export default function App() {
             />
           )}
 
-          {currentScreen === 'ai_assistant' && (
+          {currentScreen === 'ai-assistant' && (
             <AiAssistantScreen
               aiSettings={aiSettings}
               onUpdateAiSettings={setAiSettings}

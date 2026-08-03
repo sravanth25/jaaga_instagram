@@ -146,6 +146,26 @@ export const InboxScreen: React.FC<InboxScreenProps> = ({
       <div className="w-full lg:w-80 bg-white border-r border-slate-200 flex flex-col shrink-0">
         {/* Search & Filter Header */}
         <div className="p-4 border-b border-slate-200 space-y-3">
+          <div className="flex items-center justify-between gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-1.5 text-[11px] font-semibold text-emerald-800">
+            <div className="flex items-center gap-1.5">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span>Live Webhook Engine</span>
+            </div>
+            {onStartLiveChat && (
+              <button
+                onClick={() => onStartLiveChat(`user_${Math.floor(1000 + Math.random() * 9000)}`, 'hi')}
+                className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 shadow-xs cursor-pointer"
+                title="Send test 'hi' DM to verify automated response"
+              >
+                <Plus className="w-3 h-3" />
+                <span>Simulate "hi"</span>
+              </button>
+            )}
+          </div>
+
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
             <input
