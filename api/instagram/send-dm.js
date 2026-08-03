@@ -1,6 +1,7 @@
-// Create this file at:  api/instagram/send-dm.js
-// This is the endpoint your Inbox "Send" button calls. It was missing (404),
-// which is why every manual reply failed. It sends the DM and stores it.
+// Create/replace at:  api/instagram/send-dm.js
+// The Inbox "Send" endpoint. Instagram requires the NUMERIC igsid as recipient,
+// not the @username. If the frontend passes a username, this resolves it to the
+// numeric igsid from ig_messages, then sends.
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -23,6 +24,27 @@ async function storeMessage(row) {
   }
 }
 
+// If given a username, find the newest numeric igsid we stored for them.
+async function resolveIgsid(value) {
+  if (/^\d+$/.test(String(value))) return String(value); // already numeric
+  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+  try {
+    const url =
+      `${SUPABASE_URL}/rest/v1/ig_messages` +
+      `?username=eq.${encodeURIComponent(value)}` +
+      `&order=created_at.desc&limit=1&select=igsid`;
+    const r = await fetch(url, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    });
+    const rows = await r.json();
+    const id = rows?.[0]?.igsid;
+    return /^\d+$/.test(String(id)) ? String(id) : null;
+  } catch (e) {
+    console.error('[RESOLVE IGSID ERROR]', e?.message || e);
+    return null;
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -32,13 +54,20 @@ export default async function handler(req, res) {
 
   try {
     const body = req.body || {};
-    // accept whatever key the frontend uses
-    const recipientId =
+    const rawRecipient =
       body.recipientId || body.igsid || body.recipient_id || body.to || body.recipient?.id;
     const text = body.text || body.message || body.messageText || body.body;
 
-    if (!recipientId || !text) {
+    if (!rawRecipient || !text) {
       return res.status(400).json({ success: false, error: 'Missing recipientId or text', received: body });
+    }
+
+    const recipientId = await resolveIgsid(rawRecipient);
+    if (!recipientId) {
+      return res.status(200).json({
+        success: false,
+        error: `Could not find a numeric Instagram ID for "${rawRecipient}". Instagram needs the numeric igsid, not the @username. Make sure ig_messages has a numeric igsid stored for this person.`,
+      });
     }
 
     const token =
@@ -55,14 +84,13 @@ export default async function handler(req, res) {
       body: JSON.stringify({ recipient: { id: recipientId }, message: { text } }),
     });
     const data = await resp.json().catch(() => ({}));
-    console.log('[SEND-DM RESULT]', resp.status, JSON.stringify(data));
+    console.log('[SEND-DM RESULT]', resp.status, recipientId, JSON.stringify(data));
 
     if (resp.ok && !data.error) {
       await storeMessage({ igsid: recipientId, direction: 'out', text, is_ai: false });
-      return res.status(200).json({ success: true, data });
+      return res.status(200).json({ success: true, result: { data }, data });
     }
 
-    // Instagram rejected it — surface the REAL reason (often the 24-hour window)
     return res.status(200).json({
       success: false,
       error: data.error?.message || 'Instagram rejected the message',
