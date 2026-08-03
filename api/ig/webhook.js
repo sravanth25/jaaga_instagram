@@ -1,7 +1,6 @@
-// Replace api/ig/webhook.js with this complete version.
-// Handles: Meta verification (GET), incoming DMs (store + AI reply), and
-// COMMENT automations (match ig_dm_rules by media_id + keyword -> public reply + DM).
-// Heavy logging so we can trace exactly what happens.
+// Replace api/ig/webhook.js with this.
+// Handles: Meta verification, incoming DMs (store + AI reply), and COMMENT
+// automations that read the REAL ig_dm_rules columns your app writes.
 
 import { GoogleGenAI } from '@google/genai';
 import { DEFAULT_JAAGA_SYSTEM_PROMPT } from './ai-test.js';
@@ -31,30 +30,41 @@ async function storeMessage(row) {
   }
 }
 
-async function getActiveCommentRules() {
+// Read active comment automations (real columns: trigger_type, is_active)
+async function getCommentRules() {
   if (!SUPABASE_URL || !SUPABASE_KEY) {
     console.warn('[RULES] Supabase env missing');
     return [];
   }
   try {
-    const r = await sb('ig_dm_rules?type=eq.comment&active=eq.true&select=*', {});
+    const r = await sb('ig_dm_rules?is_active=eq.true&select=*', {});
     const rows = await r.json();
-    return Array.isArray(rows) ? rows : [];
+    if (!Array.isArray(rows)) return [];
+    // comment automations only
+    return rows.filter((x) => (x.trigger_type || 'comment_dm') === 'comment_dm');
   } catch (e) {
     console.error('[RULES ERROR]', e?.message || e);
     return [];
   }
 }
 
-function keywordMatch(text, keywords, matchType) {
-  if (!keywords || keywords.length === 0) return true; // "any comment"
+function keywordMatch(text, keywords, matchRule) {
+  const rule = String(matchRule || 'contains').toLowerCase();
+  const kws = Array.isArray(keywords) ? keywords : [];
+  if (rule.includes('any') || kws.length === 0) return true; // any comment
   const t = (text || '').toLowerCase();
-  return keywords.some((k) => {
+  return kws.some((k) => {
     const kw = String(k).toLowerCase().trim();
     if (!kw) return false;
-    if (matchType === 'exact') return t === kw;
-    return t.includes(kw);
+    if (rule.includes('exact')) return t === kw;
+    return t.includes(kw); // contains
   });
+}
+
+function pick(arr) {
+  const a = Array.isArray(arr) ? arr.filter(Boolean) : (arr ? [arr] : []);
+  if (a.length === 0) return null;
+  return a[Math.floor(Math.random() * a.length)];
 }
 
 async function fetchUsername(igsid, token) {
@@ -100,8 +110,7 @@ export default async function handler(req, res) {
           for (const ev of entry.messaging || []) {
             const senderId = ev.sender?.id;
             const text = ev.message?.text;
-            const isEcho = ev.message?.is_echo;
-            if (!text || isEcho || !senderId || senderId === accountId) continue;
+            if (!text || ev.message?.is_echo || !senderId || senderId === accountId) continue;
 
             console.log(`[DM IN] from ${senderId}: "${text}"`);
             const username = await fetchUsername(senderId, token);
@@ -110,31 +119,26 @@ export default async function handler(req, res) {
             let reply =
               'Thanks for messaging JaaGa! Our team will get back to you shortly. Visit https://www.jaaga.ai or call +91 88851 66880.';
             let isAi = false;
-            const apiKey = process.env.GEMINI_API_KEY;
-            if (apiKey) {
+            if (process.env.GEMINI_API_KEY) {
               try {
-                const ai = new GoogleGenAI({ apiKey });
+                const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
                 const result = await ai.models.generateContent({
                   model: 'gemini-2.5-flash',
                   contents: `${DEFAULT_JAAGA_SYSTEM_PROMPT}\n\nUser Message: ${text}`,
                 });
                 const out = (result.text || '').replace(/\*/g, '').trim();
                 if (out) { reply = out; isAi = true; }
-              } catch (aiErr) {
-                console.error('[GEMINI ERROR]', aiErr?.message || aiErr);
+              } catch (e) {
+                console.error('[GEMINI ERROR]', e?.message || e);
               }
             }
-
-            if (token) {
-              const resp = await fetch(`${BASE}/${accountId}/messages`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ recipient: { id: senderId }, message: { text: reply } }),
-              });
-              const data = await resp.json().catch(() => ({}));
-              console.log('[IG SEND RESULT]', resp.status, JSON.stringify(data));
-              await storeMessage({ igsid: senderId, username, direction: 'out', text: reply, is_ai: isAi });
-            }
+            const dm = await fetch(`${BASE}/${accountId}/messages`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ recipient: { id: senderId }, message: { text: reply } }),
+            });
+            console.log('[IG SEND RESULT]', dm.status, JSON.stringify(await dm.json().catch(() => ({}))));
+            await storeMessage({ igsid: senderId, username, direction: 'out', text: reply, is_ai: isAi });
           }
 
           // ---------- COMMENTS ----------
@@ -148,7 +152,7 @@ export default async function handler(req, res) {
             const commentText = v.text || '';
             const fromId = v.from?.id;
             const fromUser = v.from?.username;
-            const mediaId = v.media?.id;
+            const mediaId = v.media?.id ? String(v.media.id) : null;
             console.log('[COMMENT IN]', JSON.stringify({ commentId, fromUser, fromId, mediaId, commentText }));
 
             if (!fromId || fromId === accountId) {
@@ -156,40 +160,49 @@ export default async function handler(req, res) {
               continue;
             }
 
-            const rules = await getActiveCommentRules();
-            console.log('[COMMENT RULES]', rules.length, 'active comment rule(s)');
-            const rule = rules.find(
-              (r) => (!r.media_id || r.media_id === mediaId) && keywordMatch(commentText, r.keywords, r.match_type)
-            );
+            const rules = await getCommentRules();
+            console.log('[COMMENT RULES]', rules.length, 'active comment automation(s)');
+
+            const rule = rules.find((r) => {
+              const posts = Array.isArray(r.selected_post_ids) ? r.selected_post_ids.map(String) : [];
+              const postOk = posts.length === 0 || posts.includes(mediaId);
+              return postOk && keywordMatch(commentText, r.keywords, r.match_rule);
+            });
+
             if (!rule) {
-              console.log('[COMMENT NO MATCH]', JSON.stringify({ mediaId, ruleMediaIds: rules.map((r) => r.media_id), text: commentText }));
+              console.log('[COMMENT NO MATCH]', JSON.stringify({
+                mediaId,
+                rulePosts: rules.map((r) => r.selected_post_ids),
+                ruleKeywords: rules.map((r) => r.keywords),
+                commentText,
+              }));
               continue;
             }
-            console.log('[COMMENT MATCHED RULE]', rule.name || rule.id);
+            console.log('[COMMENT MATCHED]', rule.title || rule.id);
 
             // public reply under the comment
-            if (rule.public_reply) {
-              const variations = Array.isArray(rule.public_reply) ? rule.public_reply : [rule.public_reply];
-              const pr = variations[Math.floor(Math.random() * variations.length)];
+            const publicReply = pick(rule.public_comment_replies);
+            if (publicReply) {
               const rr = await fetch(`${BASE}/${commentId}/replies`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ message: pr }),
+                body: JSON.stringify({ message: publicReply }),
               });
               console.log('[COMMENT PUBLIC REPLY]', rr.status, JSON.stringify(await rr.json().catch(() => ({}))));
             }
 
             // private DM to the commenter
-            if (rule.dm_reply) {
+            const dmText = rule.dm_message_text;
+            if (dmText) {
               const dr = await fetch(`${BASE}/${accountId}/messages`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ recipient: { comment_id: commentId }, message: { text: rule.dm_reply } }),
+                body: JSON.stringify({ recipient: { comment_id: commentId }, message: { text: dmText } }),
               });
               const drData = await dr.json().catch(() => ({}));
               console.log('[COMMENT DM]', dr.status, JSON.stringify(drData));
               if (dr.ok && !drData.error) {
-                await storeMessage({ igsid: fromId, username: fromUser, direction: 'out', text: rule.dm_reply, is_ai: false });
+                await storeMessage({ igsid: fromId, username: fromUser, direction: 'out', text: dmText, is_ai: false });
               }
             }
           }
