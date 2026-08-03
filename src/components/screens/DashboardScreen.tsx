@@ -249,7 +249,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                          @{conv.userHandle}
+                          @{conv.userHandle.replace(/^@+/, '')}
                         </span>
                         {conv.mode === 'automated' ? (
                           <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">

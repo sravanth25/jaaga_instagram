@@ -127,6 +127,34 @@ export async function saveLiveLeadToSupabase(lead: any): Promise<boolean> {
   }
 }
 
+export async function fetchLiveMessagesFromSupabase(): Promise<any[]> {
+  if (supabase && isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('ig_messages')
+        .select('*')
+        .order('created_at', { ascending: true });
+      if (!error && data && data.length > 0) {
+        return data;
+      }
+    } catch (err) {
+      console.warn('Supabase client ig_messages query failed, trying API fallback:', err);
+    }
+  }
+
+  try {
+    const res = await fetch('/api/ig/supabase-messages');
+    const json = await res.json();
+    if (json?.success && Array.isArray(json.messages)) {
+      return json.messages;
+    }
+  } catch (err) {
+    console.error('API fetch for ig_messages failed:', err);
+  }
+
+  return [];
+}
+
 export async function checkSupabaseConnection(): Promise<SupabaseHealthResult> {
   if (!supabase || !isSupabaseConfigured) {
     return {

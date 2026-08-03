@@ -22,6 +22,7 @@ import {
   saveLiveAutomationToSupabase,
   fetchLiveLeads,
   saveLiveLeadToSupabase,
+  fetchLiveMessagesFromSupabase,
 } from './lib/supabase';
 import { sendDirectMessage } from './services/instagram';
 
@@ -138,7 +139,7 @@ export default function App() {
     loadSupabaseLive();
   }, []);
 
-  // Poll backend webhook events every 3 seconds to keep Inbox conversations in real-time sync
+  // Poll backend webhook events AND Supabase ig_messages every 3 seconds to keep Inbox in real-time sync
   useEffect(() => {
     function getHash(str: string) {
       let hash = 0;
@@ -151,6 +152,142 @@ export default function App() {
 
     const pollWebhookEvents = async () => {
       try {
+        // 1. Fetch live messages from Supabase
+        const dbMessages = await fetchLiveMessagesFromSupabase();
+        if (Array.isArray(dbMessages) && dbMessages.length > 0) {
+          setConversations((prevConvs) => {
+            let updated = [...prevConvs];
+            let changed = false;
+
+            // Group dbMessages by sender/user ID or handle
+            const groups: Record<string, any[]> = {};
+            for (const msg of dbMessages) {
+              const rawUser = String(msg.igsid || msg.sender_id || msg.conversation_id || msg.sender_handle || 'ig_user').trim();
+              if (!rawUser) continue;
+              if (!groups[rawUser]) groups[rawUser] = [];
+              groups[rawUser].push(msg);
+            }
+
+            for (const [rawUser, rows] of Object.entries(groups)) {
+              const sampleRow = rows.find((r) => r.username || r.sender_handle) || rows[0];
+              const rawHandle = String(sampleRow.username || sampleRow.sender_handle || rawUser).replace(/^@/, '').trim();
+              
+              let displayHandle = rawHandle;
+              if (/^\d+$/.test(displayHandle)) {
+                displayHandle = `ig_user_${displayHandle.slice(-4)}`;
+              } else if (displayHandle.startsWith('user_')) {
+                displayHandle = `ig_user_${displayHandle.replace('user_', '')}`;
+              }
+              const cleanHandle = `@${displayHandle.replace(/^@/, '')}`;
+
+              const existingIndex = updated.findIndex((c) => {
+                const cHandle = c.userHandle.replace(/^@/, '').toLowerCase();
+                return (
+                  c.id === rawUser ||
+                  c.id === `conv_${rawUser}` ||
+                  c.id === `conv_${rawHandle}` ||
+                  cHandle === rawUser.toLowerCase() ||
+                  cHandle === displayHandle.toLowerCase()
+                );
+              });
+
+              const parsedMsgs: Message[] = rows.map((r, i) => {
+                const isUser = r.direction !== undefined
+                  ? r.direction === 'in'
+                  : r.is_from_user !== undefined
+                    ? Boolean(r.is_from_user)
+                    : r.sender === 'user';
+                
+                const isAi = r.ai_generated !== undefined
+                  ? Boolean(r.ai_generated)
+                  : (r.is_ai !== undefined ? Boolean(r.is_ai) : false);
+
+                const text = r.text || r.message_text || '';
+                let timeStr = 'Just now';
+                if (r.created_at) {
+                  try {
+                    const d = new Date(r.created_at);
+                    timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                  } catch {
+                    timeStr = 'Just now';
+                  }
+                }
+                return {
+                  id: String(r.id || `sp_msg_${rawUser}_${i}_${Date.now()}`),
+                  sender: isUser ? 'user' : (isAi ? 'bot' : 'human'),
+                  text,
+                  timestamp: timeStr,
+                };
+              });
+
+              const lastRow = rows[rows.length - 1];
+              const lastText = lastRow.text || lastRow.message_text || '';
+
+              if (existingIndex >= 0) {
+                const existingConv = updated[existingIndex];
+                const currentMsgs = [...existingConv.messages];
+                let hasNewMsg = false;
+
+                for (const pm of parsedMsgs) {
+                  const exists = currentMsgs.some(
+                    (m) => m.id === pm.id || (m.text === pm.text && m.sender === pm.sender)
+                  );
+                  if (!exists) {
+                    currentMsgs.push(pm);
+                    hasNewMsg = true;
+                  }
+                }
+
+                if (hasNewMsg) {
+                  changed = true;
+                  updated[existingIndex] = {
+                    ...existingConv,
+                    userHandle: cleanHandle,
+                    userName: displayHandle,
+                    lastMessage: lastText || existingConv.lastMessage,
+                    timestamp: 'Just now',
+                    unread: true,
+                    messages: currentMsgs,
+                    tags: Array.from(new Set([...(existingConv.tags || []), 'Supabase Sync', 'Live DM'])),
+                  };
+                }
+              } else {
+                changed = true;
+                const newConv: Conversation = {
+                  id: `conv_${rawUser}`,
+                  userHandle: cleanHandle,
+                  userName: displayHandle,
+                  avatar: sampleRow.avatar_url || `https://images.unsplash.com/photo-${1534528741775 + (getHash(rawUser) % 500)}?auto=format&fit=crop&w=150&q=80`,
+                  followerCount: '1.2k',
+                  lastMessage: lastText,
+                  timestamp: 'Just now',
+                  unread: true,
+                  mode: 'automated',
+                  tags: ['Supabase Sync', 'Live DM'],
+                  leadInfo: {
+                    email: '',
+                    phone: '',
+                    status: 'new',
+                    capturedAt: new Date().toISOString().split('T')[0],
+                  },
+                  triggerHistory: [
+                    {
+                      automationName: 'Supabase Webhook DM',
+                      timestamp: new Date().toLocaleTimeString(),
+                      keywordMatched: 'Direct Message',
+                    },
+                  ],
+                  messages: parsedMsgs,
+                };
+                updated = [newConv, ...updated];
+              }
+            }
+
+            return changed ? updated : prevConvs;
+          });
+        }
+
+        // 2. Also check local server memory webhook events
         const res = await fetch('/api/ig/webhook-events');
         const data = await res.json();
         if (data?.success && Array.isArray(data.events) && data.events.length > 0) {
@@ -366,74 +503,128 @@ export default function App() {
   };
 
   const handleSendMessage = (id: string, text: string, sender: 'bot' | 'human') => {
-    const newMsg = {
-      id: `m_${Date.now()}`,
+    const newMsg: Message = {
+      id: `m_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
       sender,
       text,
       timestamp: 'Just now',
     };
 
-    const targetConv = conversations.find((c) => c.id === id);
-    if (targetConv) {
-      // Dispatch live DM via Instagram Graph API
-      sendDirectMessage({
-        recipientId: targetConv.userHandle.replace(/^@/, '') || '17841462404931884',
-        message: text,
-      }).catch((err) => {
-        console.warn('Graph API sendDirectMessage background result:', err);
-      });
+    const targetConv = conversations.find(
+      (c) =>
+        c.id === id ||
+        c.id === `conv_${id}` ||
+        c.userHandle.replace(/^@+/, '').toLowerCase() === id.replace(/^@+/, '').toLowerCase()
+    );
+    if (!targetConv) return;
 
-      // If in automated mode and human sent message, trigger automated response simulation
-      if (targetConv.mode === 'automated' && sender === 'human') {
-        fetch('/api/ig/simulate-incoming-dm', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            senderId: targetConv.userHandle,
-            messageText: text,
-          }),
-        })
-          .then((res) => res.json())
-          .then((data) => {
-            if (data?.replyText) {
-              const botMsg = {
-                id: `m_bot_${Date.now()}`,
-                sender: 'bot' as const,
-                text: data.replyText,
-                timestamp: 'Just now',
-              };
-              setConversations((prev) =>
-                prev.map((c) => {
-                  if (c.id === id) {
-                    return {
-                      ...c,
-                      lastMessage: data.replyText,
-                      timestamp: 'Just now',
-                      messages: [...c.messages, newMsg, botMsg],
-                    };
-                  }
-                  return c;
-                })
-              );
-            }
-          })
-          .catch(() => {});
-      }
-    }
+    const convId = targetConv.id;
+    const rawHandle = targetConv.userHandle.replace(/^@+/, '');
 
+    // 1. Synchronously append human/bot message to React state
     setConversations((prev) =>
       prev.map((c) => {
-        if (c.id === id) {
+        if (c.id === convId) {
           return {
             ...c,
             lastMessage: text,
             timestamp: 'Just now',
+            unread: false,
             messages: [...c.messages, newMsg],
           };
         }
         return c;
       })
     );
+
+    // 2. Persist to Supabase ig_messages table
+    fetch('/api/ig/store-message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversation_id: convId.replace(/^conv_/, ''),
+        sender_id: 'page_owner',
+        recipient_id: rawHandle,
+        sender_handle: 'jaaga.ai',
+        message_text: text,
+        is_from_user: false,
+        ai_generated: sender === 'bot',
+        igsid: convId.replace(/^conv_/, ''),
+        username: rawHandle,
+        direction: 'out',
+        text,
+        is_ai: sender === 'bot',
+      }),
+    }).catch((err) => console.warn('store-message error:', err));
+
+    // 3. Dispatch via Instagram Graph API
+    sendDirectMessage({
+      recipientId: rawHandle || '17841462404931884',
+      message: text,
+    }).catch((err) => {
+      console.warn('Graph API sendDirectMessage background result:', err);
+    });
+
+    // 4. If in automated bot mode and human agent sent a message, check simulated incoming DM
+    if (targetConv.mode === 'automated' && sender === 'human') {
+      fetch('/api/ig/simulate-incoming-dm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          senderId: targetConv.userHandle,
+          messageText: text,
+        }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.replyText) {
+            const botMsg: Message = {
+              id: `m_bot_${Date.now()}`,
+              sender: 'bot',
+              text: data.replyText,
+              timestamp: 'Just now',
+            };
+
+            // Store bot response to Supabase
+            fetch('/api/ig/store-message', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                conversation_id: convId.replace(/^conv_/, ''),
+                sender_id: 'page_owner',
+                recipient_id: rawHandle,
+                sender_handle: 'jaaga.ai',
+                message_text: data.replyText,
+                is_from_user: false,
+                ai_generated: true,
+                igsid: convId.replace(/^conv_/, ''),
+                username: rawHandle,
+                direction: 'out',
+                text: data.replyText,
+                is_ai: true,
+              }),
+            }).catch(() => {});
+
+            // Append botMsg ONLY (do not duplicate newMsg)
+            setConversations((prev) =>
+              prev.map((c) => {
+                if (c.id === convId) {
+                  return {
+                    ...c,
+                    lastMessage: data.replyText,
+                    timestamp: 'Just now',
+                    messages: [...c.messages, botMsg],
+                  };
+                }
+                return c;
+              })
+            );
+          }
+        })
+        .catch((err) => {
+          console.warn('Automated reply simulation error:', err);
+        });
+    }
   };
 
   const handleUpdateLeadInfo = (id: string, email: string, phone: string, tags: string[]) => {

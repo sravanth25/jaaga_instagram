@@ -85,6 +85,13 @@ export const InboxScreen: React.FC<InboxScreenProps> = ({
     }
   }, [activeConv?.id]);
 
+  // Format handles consistently to ensure no double @@
+  const formatHandle = (handle: string) => {
+    if (!handle) return '';
+    const clean = handle.replace(/^@+/, '');
+    return `@${clean}`;
+  };
+
   const filteredConvs = conversations.filter((conv) => {
     const matchesSearch =
       conv.userHandle.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -335,7 +342,7 @@ export const InboxScreen: React.FC<InboxScreenProps> = ({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-slate-900 truncate">
-                        @{conv.userHandle}
+                        {formatHandle(conv.userHandle)}
                       </span>
                       <span className="text-[10px] text-slate-400 shrink-0 font-medium">
                         {conv.timestamp}
@@ -389,7 +396,7 @@ export const InboxScreen: React.FC<InboxScreenProps> = ({
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                     {activeConv.userName}
                   </h3>
-                  <span className="text-xs text-slate-400">@{activeConv.userHandle}</span>
+                  <span className="text-xs text-slate-400">{formatHandle(activeConv.userHandle)}</span>
                 </div>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
                   Followers: {activeConv.followerCount || '10k+'} • Instagram Direct
@@ -436,7 +443,7 @@ export const InboxScreen: React.FC<InboxScreenProps> = ({
                   className={`flex flex-col ${isUser ? 'items-start' : 'items-end'}`}
                 >
                   <div className="flex items-center gap-1 mb-1 text-[10px] text-slate-400 font-semibold px-1">
-                    {msg.sender === 'user' && <span>@{activeConv.userHandle}</span>}
+                    {msg.sender === 'user' && <span>{formatHandle(activeConv.userHandle)}</span>}
                     {msg.sender === 'bot' && (
                       <span className="text-purple-500 font-bold flex items-center gap-1">
                         <Bot className="w-3 h-3" /> Auto Bot
@@ -518,7 +525,7 @@ export const InboxScreen: React.FC<InboxScreenProps> = ({
                 value={messageInput}
                 onChange={(e) => setMessageInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleSend())}
-                placeholder={`Type a reply to @${activeConv.userHandle}...`}
+                placeholder={`Type a reply to ${formatHandle(activeConv.userHandle)}...`}
                 className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
               <button
@@ -565,7 +572,7 @@ export const InboxScreen: React.FC<InboxScreenProps> = ({
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
               {activeConv.userName}
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">@{activeConv.userHandle}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{formatHandle(activeConv.userHandle)}</p>
           </div>
 
           {/* Captured Lead Data Fields */}
