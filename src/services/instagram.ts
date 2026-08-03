@@ -169,6 +169,7 @@ export interface IGAutomationRule {
   id: string;
   type?: string; // 'comment'
   media_id?: string | null;
+  selected_post_ids?: string[];
   keywords: string[];
   match_type?: 'contains' | 'exact' | 'any';
   public_reply?: string | null;

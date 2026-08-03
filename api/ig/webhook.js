@@ -1,70 +1,90 @@
-// Replace api/ig/webhook.js with this complete version.
-// Handles: Meta verification (GET), incoming DMs (store + AI reply), and
-// COMMENT automations (match ig_dm_rules by media_id + keyword -> public reply + DM).
-// Heavy logging so we can trace exactly what happens.
-
 import { GoogleGenAI } from '@google/genai';
 import { DEFAULT_JAAGA_SYSTEM_PROMPT } from './ai-test.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const BASE = 'https://graph.instagram.com/v26.0';
-
-async function sb(path, opts = {}) {
-  return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...opts,
-    headers: {
-      apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`,
-      'Content-Type': 'application/json',
-      ...(opts.headers || {}),
-    },
-  });
-}
 
 async function storeMessage(row) {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return;
-  try {
-    await sb('ig_messages', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(row) });
-  } catch (e) {
-    console.error('[STORE ERROR]', e?.message || e);
-  }
-}
-
-async function getActiveCommentRules() {
   if (!SUPABASE_URL || !SUPABASE_KEY) {
-    console.warn('[RULES] Supabase env missing');
-    return [];
+    console.warn('[STORE SKIP] Missing SUPABASE_URL or SUPABASE_SERVICE_KEY');
+    return;
   }
   try {
-    const r = await sb('ig_dm_rules?type=eq.comment&active=eq.true&select=*', {});
-    const rows = await r.json();
-    return Array.isArray(rows) ? rows : [];
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/ig_messages`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(row),
+    });
+    if (!r.ok) console.error('[STORE ERROR]', r.status, await r.text());
+    else console.log('[STORED]', row.direction, row.igsid);
   } catch (e) {
-    console.error('[RULES ERROR]', e?.message || e);
-    return [];
+    console.error('[STORE EXCEPTION]', e?.message || e);
   }
 }
 
-function keywordMatch(text, keywords, matchType) {
-  if (!keywords || keywords.length === 0) return true; // "any comment"
-  const t = (text || '').toLowerCase();
-  return keywords.some((k) => {
-    const kw = String(k).toLowerCase().trim();
-    if (!kw) return false;
-    if (matchType === 'exact') return t === kw;
-    return t.includes(kw);
-  });
-}
-
-async function fetchUsername(igsid, token) {
+async function fetchUsername(igsid, token, base) {
   try {
-    const r = await fetch(`${BASE}/${igsid}?fields=username&access_token=${token}`);
+    const r = await fetch(`${base}/${igsid}?fields=username&access_token=${token}`);
     const d = await r.json();
     return d?.username || null;
   } catch {
     return null;
   }
+}
+
+async function fetchActiveDmRules() {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return [];
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/ig_dm_rules?select=*&active=eq.true`, {
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+      },
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (e) {
+    console.error('[FETCH DM RULES EXCEPTION]', e?.message || e);
+  }
+  return [];
+}
+
+function findMatchingRule(rules, commentText, mediaId) {
+  const cleanComment = (commentText || '').trim().toLowerCase();
+  for (const rule of rules) {
+    if (rule.active === false) continue;
+    if (rule.type && rule.type !== 'comment') continue;
+
+    // Check media_id scope
+    if (rule.media_id && mediaId && String(rule.media_id) !== String(mediaId)) {
+      continue;
+    }
+
+    const keywords = Array.isArray(rule.keywords)
+      ? rule.keywords
+      : (typeof rule.keywords === 'string' ? rule.keywords.split(',').map(s => s.trim()) : []);
+    const matchType = rule.match_type || 'contains';
+
+    if (keywords.length === 0 || matchType === 'any') {
+      return rule;
+    }
+
+    const isMatch = keywords.some((kw) => {
+      const cleanKw = String(kw).trim().toLowerCase();
+      if (!cleanKw) return false;
+      if (matchType === 'exact') return cleanComment === cleanKw;
+      return cleanComment.includes(cleanKw);
+    });
+
+    if (isMatch) return rule;
+  }
+  return null;
 }
 
 export default async function handler(req, res) {
@@ -73,8 +93,10 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const verifyToken = process.env.IG_VERIFY_TOKEN || process.env.INSTAGRAM_VERIFY_TOKEN || 'jaaga_ig_verify';
+  const verifyToken =
+    process.env.IG_VERIFY_TOKEN || process.env.INSTAGRAM_VERIFY_TOKEN || 'jaaga_ig_verify';
 
+  // ---- GET: Meta verification ----
   if (req.method === 'GET') {
     const mode = req.query['hub.mode'] || req.query['mode'];
     const token = req.query['hub.verify_token'] || req.query['verify_token'];
@@ -85,18 +107,24 @@ export default async function handler(req, res) {
     return res.status(403).send('Verification failed');
   }
 
+  // ---- POST: incoming events ----
   if (req.method === 'POST') {
     try {
       const body = req.body;
       console.log('[IG WEBHOOK EVENT]:', JSON.stringify(body));
 
       const token =
-        process.env.IG_ACCESS_TOKEN || process.env.INSTAGRAM_ACCESS_TOKEN || process.env.VITE_INSTAGRAM_ACCESS_TOKEN;
-      const accountId = process.env.IG_ACCOUNT_ID || process.env.INSTAGRAM_ACCOUNT_ID || '17841462404931884';
+        process.env.IG_ACCESS_TOKEN ||
+        process.env.INSTAGRAM_ACCESS_TOKEN ||
+        process.env.VITE_INSTAGRAM_ACCESS_TOKEN;
+      const accountId =
+        process.env.IG_ACCOUNT_ID || process.env.INSTAGRAM_ACCOUNT_ID || '17841462404931884';
+      const base = 'https://graph.instagram.com/v23.0';
 
       if (body && (body.object === 'instagram' || body.object === 'page')) {
         for (const entry of body.entry || []) {
-          // ---------- DIRECT MESSAGES ----------
+
+          // 1. Direct Messaging events
           for (const ev of entry.messaging || []) {
             const senderId = ev.sender?.id;
             const text = ev.message?.text;
@@ -104,7 +132,8 @@ export default async function handler(req, res) {
             if (!text || isEcho || !senderId || senderId === accountId) continue;
 
             console.log(`[DM IN] from ${senderId}: "${text}"`);
-            const username = await fetchUsername(senderId, token);
+            const username = await fetchUsername(senderId, token, base);
+
             await storeMessage({ igsid: senderId, username, direction: 'in', text, is_ai: false });
 
             let reply =
@@ -119,77 +148,116 @@ export default async function handler(req, res) {
                   contents: `${DEFAULT_JAAGA_SYSTEM_PROMPT}\n\nUser Message: ${text}`,
                 });
                 const out = (result.text || '').replace(/\*/g, '').trim();
-                if (out) { reply = out; isAi = true; }
+                if (out) {
+                  reply = out;
+                  isAi = true;
+                }
               } catch (aiErr) {
                 console.error('[GEMINI ERROR]', aiErr?.message || aiErr);
               }
             }
 
             if (token) {
-              const resp = await fetch(`${BASE}/${accountId}/messages`, {
+              const resp = await fetch(`${base}/${accountId}/messages`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                 body: JSON.stringify({ recipient: { id: senderId }, message: { text: reply } }),
               });
               const data = await resp.json().catch(() => ({}));
-              console.log('[IG SEND RESULT]', resp.status, JSON.stringify(data));
+              console.log('[IG DM SEND RESULT]', resp.status, JSON.stringify(data));
+
               await storeMessage({ igsid: senderId, username, direction: 'out', text: reply, is_ai: isAi });
             }
           }
 
-          // ---------- COMMENTS ----------
+          // 2. Change events (Comments handling per Section E)
           for (const change of entry.changes || []) {
-            if (change.field !== 'comments') {
-              console.log('[CHANGE non-comment]', change.field);
-              continue;
-            }
-            const v = change.value || {};
-            const commentId = v.id;
-            const commentText = v.text || '';
-            const fromId = v.from?.id;
-            const fromUser = v.from?.username;
-            const mediaId = v.media?.id;
-            console.log('[COMMENT IN]', JSON.stringify({ commentId, fromUser, fromId, mediaId, commentText }));
+            console.log('[CHANGE FIELD]', change.field, JSON.stringify(change.value));
 
-            if (!fromId || fromId === accountId) {
-              console.log('[COMMENT SKIP] own/self comment — test from a DIFFERENT account');
-              continue;
-            }
+            if (change.field === 'comments' && change.value) {
+              const val = change.value;
+              const commentId = val.id;
+              const commentText = val.text || '';
+              const commenterId = val.from?.id;
+              const commenterName = val.from?.username || commenterId || 'user';
+              const mediaId = val.media?.id || val.media_id;
 
-            const rules = await getActiveCommentRules();
-            console.log('[COMMENT RULES]', rules.length, 'active comment rule(s)');
-            const rule = rules.find(
-              (r) => (!r.media_id || r.media_id === mediaId) && keywordMatch(commentText, r.keywords, r.match_type)
-            );
-            if (!rule) {
-              console.log('[COMMENT NO MATCH]', JSON.stringify({ mediaId, ruleMediaIds: rules.map((r) => r.media_id), text: commentText }));
-              continue;
-            }
-            console.log('[COMMENT MATCHED RULE]', rule.name || rule.id);
+              // Section E1: Skip if commenter is our own account (avoid loops)
+              if (commenterId === accountId) {
+                console.log('[COMMENT SKIP] Comment from page owner');
+                continue;
+              }
 
-            // public reply under the comment
-            if (rule.public_reply) {
-              const variations = Array.isArray(rule.public_reply) ? rule.public_reply : [rule.public_reply];
-              const pr = variations[Math.floor(Math.random() * variations.length)];
-              const rr = await fetch(`${BASE}/${commentId}/replies`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ message: pr }),
-              });
-              console.log('[COMMENT PUBLIC REPLY]', rr.status, JSON.stringify(await rr.json().catch(() => ({}))));
-            }
+              console.log(`[COMMENT IN] id=${commentId} from=${commenterName} media=${mediaId} text="${commentText}"`);
 
-            // private DM to the commenter
-            if (rule.dm_reply) {
-              const dr = await fetch(`${BASE}/${accountId}/messages`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ recipient: { comment_id: commentId }, message: { text: rule.dm_reply } }),
-              });
-              const drData = await dr.json().catch(() => ({}));
-              console.log('[COMMENT DM]', dr.status, JSON.stringify(drData));
-              if (dr.ok && !drData.error) {
-                await storeMessage({ igsid: fromId, username: fromUser, direction: 'out', text: rule.dm_reply, is_ai: false });
+              // Section E2: Find active rule
+              const activeRules = await fetchActiveDmRules();
+              const matchedRule = findMatchingRule(activeRules, commentText, mediaId);
+
+              if (matchedRule) {
+                console.log(`[RULE MATCHED] Rule "${matchedRule.name || matchedRule.id}" for comment "${commentText}"`);
+
+                // Section E3: Public comment reply
+                if (matchedRule.public_reply) {
+                  const variations = String(matchedRule.public_reply)
+                    .split(/\n|\|/)
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                  const publicMsg = variations[Math.floor(Math.random() * variations.length)] || matchedRule.public_reply;
+
+                  if (token && commentId) {
+                    try {
+                      const pubResp = await fetch(`${base}/${commentId}/replies`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({ message: publicMsg }),
+                      });
+                      const pubData = await pubResp.json().catch(() => ({}));
+                      console.log('[PUBLIC COMMENT REPLY RESULT]', pubResp.status, JSON.stringify(pubData));
+                    } catch (pubErr) {
+                      console.error('[PUBLIC COMMENT REPLY ERROR]', pubErr);
+                    }
+                  }
+                }
+
+                // Section E4: DM message private reply to commenter
+                if (matchedRule.dm_reply) {
+                  const dmText = matchedRule.dm_reply;
+
+                  if (token && commentId) {
+                    try {
+                      const dmResp = await fetch(`${base}/${accountId}/messages`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({
+                          recipient: { comment_id: commentId },
+                          message: { text: dmText },
+                        }),
+                      });
+                      const dmData = await dmResp.json().catch(() => ({}));
+                      console.log('[DM PRIVATE REPLY RESULT]', dmResp.status, JSON.stringify(dmData));
+                    } catch (dmErr) {
+                      console.error('[DM PRIVATE REPLY ERROR]', dmErr);
+                    }
+                  }
+
+                  // Store message for Inbox tracking
+                  await storeMessage({
+                    igsid: commenterId || commentId,
+                    username: commenterName,
+                    direction: 'out',
+                    text: `[Auto-DM via Comment]: ${dmText}`,
+                    is_ai: false,
+                  });
+                }
+              } else {
+                console.log('[COMMENT NO MATCH] No active rule matched for comment.');
               }
             }
           }

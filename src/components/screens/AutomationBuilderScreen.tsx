@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Automation, IGPost, DMButton, MatchRule, ScreenType } from '../../types';
-import { MOCK_POSTS } from '../../data/mockData';
+import { IGPostItem, fetchInstagramPosts } from '../../services/instagram';
 import {
   Sparkles,
   Plus,
@@ -20,6 +20,7 @@ import {
   Save,
   HelpCircle,
   AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 
 interface AutomationBuilderScreenProps {
@@ -43,8 +44,22 @@ export const AutomationBuilderScreen: React.FC<AutomationBuilderScreenProps> = (
     automationToEdit?.description || 'Auto-replies to comments and sends direct messages with lead link.'
   );
   const [selectedPostIds, setSelectedPostIds] = useState<string[]>(
-    automationToEdit?.selectedPostIds || ['post_1']
+    automationToEdit?.selectedPostIds && automationToEdit.selectedPostIds.length > 0
+      ? automationToEdit.selectedPostIds.map(String).filter((id) => id !== 'post_1')
+      : []
   );
+  const [igPosts, setIgPosts] = useState<IGPostItem[]>([]);
+  const [loadingPosts, setLoadingPosts] = useState(false);
+
+  useEffect(() => {
+    async function loadPosts() {
+      setLoadingPosts(true);
+      const posts = await fetchInstagramPosts();
+      setIgPosts(posts);
+      setLoadingPosts(false);
+    }
+    loadPosts();
+  }, []);
   const [keywordInput, setKeywordInput] = useState('');
   const [keywords, setKeywords] = useState<string[]>(
     automationToEdit?.keywords || ['CHECKLIST', 'LINK', 'UI']
@@ -269,37 +284,46 @@ export const AutomationBuilderScreen: React.FC<AutomationBuilderScreenProps> = (
               </button>
             </div>
 
-            {/* Mock Instagram Posts Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
-              {MOCK_POSTS.map((post) => {
-                const isSelected = selectedPostIds.includes(post.id);
-                return (
-                  <div
-                    key={post.id}
-                    onClick={() => togglePostSelection(post.id)}
-                    className={`relative rounded-xl overflow-hidden border-2 transition-all cursor-pointer group ${
-                      isSelected
-                        ? 'border-purple-600 ring-2 ring-purple-500/30'
-                        : 'border-slate-200 dark:border-slate-800 opacity-75 hover:opacity-100'
-                    }`}
-                  >
-                    <img
-                      src={post.mediaUrl}
-                      alt="IG Post"
-                      className="w-full h-24 object-cover"
-                    />
-                    <div className="p-1.5 bg-slate-900/80 backdrop-blur-xs text-white text-[10px] truncate">
-                      {post.caption}
-                    </div>
-                    {isSelected && (
-                      <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center">
-                        <Check className="w-3 h-3" />
+            {/* Live Instagram Posts Grid */}
+            {loadingPosts ? (
+              <div className="py-6 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-purple-600" />
+                <span>Loading Instagram posts...</span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                {igPosts.map((post) => {
+                  const postRealId = String(post.id);
+                  const isSelected = selectedPostIds.includes(postRealId);
+                  return (
+                    <div
+                      key={postRealId}
+                      onClick={() => togglePostSelection(postRealId)}
+                      className={`relative rounded-xl overflow-hidden border-2 transition-all cursor-pointer group ${
+                        isSelected
+                          ? 'border-purple-600 ring-2 ring-purple-500/30'
+                          : 'border-slate-200 dark:border-slate-800 opacity-75 hover:opacity-100'
+                      }`}
+                    >
+                      <img
+                        src={post.thumbnail_url || post.media_url}
+                        alt="IG Post"
+                        className="w-full h-24 object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="p-1.5 bg-slate-900/80 backdrop-blur-xs text-white text-[10px] truncate">
+                        {post.caption || `Post ${postRealId}`}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                      {isSelected && (
+                        <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center">
+                          <Check className="w-3 h-3 text-white" />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* STEP 2: Trigger Keywords & Matching Rules */}

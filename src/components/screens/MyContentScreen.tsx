@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Automation, ScreenType } from '../../types';
 import {
   IGPostItem,
   IGAutomationRule,
@@ -28,7 +29,21 @@ import {
   ExternalLink,
 } from 'lucide-react';
 
-export const MyContentScreen: React.FC = () => {
+interface MyContentScreenProps {
+  automations?: Automation[];
+  onSelectAutomationToEdit?: (automation: Automation) => void;
+  onSetupPostAutomation?: (post: IGPostItem) => void;
+  onSaveAutomation?: (automation: Automation) => void;
+  onNavigate?: (screen: ScreenType) => void;
+}
+
+export const MyContentScreen: React.FC<MyContentScreenProps> = ({
+  automations = [],
+  onSelectAutomationToEdit,
+  onSetupPostAutomation,
+  onSaveAutomation,
+  onNavigate,
+}) => {
   const [posts, setPosts] = useState<IGPostItem[]>([]);
   const [rules, setRules] = useState<IGAutomationRule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,13 +89,46 @@ export const MyContentScreen: React.FC = () => {
     setRefreshing(false);
   };
 
-  const getRuleForPost = (postId: string): IGAutomationRule | undefined => {
-    return rules.find(
-      (r) => r.media_id === postId || r.media_id === String(postId)
-    );
+  const getRuleForPost = (postId: string | number): IGAutomationRule | undefined => {
+    const pid = String(postId);
+
+    // 1. Check in App automations state loaded live from Supabase
+    if (automations && automations.length > 0) {
+      const foundAuto = automations.find((a) => {
+        if (a.status !== 'live') return false;
+        const postIds = (a.selectedPostIds || []).map(String);
+        return postIds.includes(pid);
+      });
+      if (foundAuto) {
+        return {
+          id: foundAuto.id,
+          type: 'comment',
+          media_id: pid,
+          selected_post_ids: foundAuto.selectedPostIds,
+          keywords: foundAuto.keywords,
+          match_type: foundAuto.matchRule === 'exact' ? 'exact' : foundAuto.matchRule === 'any' ? 'any' : 'contains',
+          public_reply: foundAuto.publicCommentReplies[0] || null,
+          dm_reply: foundAuto.dmMessageText,
+          active: foundAuto.status === 'live',
+          name: foundAuto.title,
+        };
+      }
+    }
+
+    // 2. Check in local rules fetched from /api/ig/dm-rules
+    return rules.find((r) => {
+      if (r.active === false) return false;
+      if (String(r.media_id) === pid) return true;
+      if (Array.isArray(r.selected_post_ids) && r.selected_post_ids.map(String).includes(pid)) return true;
+      return false;
+    });
   };
 
   const openBuilder = (post: IGPostItem) => {
+    if (onSetupPostAutomation) {
+      onSetupPostAutomation(post);
+      return;
+    }
     setSelectedPost(post);
     const existingRule = getRuleForPost(post.id);
     if (existingRule) {
@@ -133,13 +181,15 @@ export const MyContentScreen: React.FC = () => {
     if (!selectedPost) return;
     setSaving(true);
 
+    const realPostId = String(selectedPost.id);
     const captionSnippet =
-      selectedPost.caption?.substring(0, 40) || `Post ${selectedPost.id}`;
+      selectedPost.caption?.substring(0, 40) || `Post ${realPostId}`;
 
     const rulePayload: Partial<IGAutomationRule> = {
-      id: editingRule?.id || `rule_post_${selectedPost.id}`,
+      id: editingRule?.id || `rule_post_${realPostId}`,
       type: 'comment',
-      media_id: String(selectedPost.id),
+      media_id: realPostId,
+      selected_post_ids: [realPostId],
       keywords: anyCommentTriggers ? [] : keywords,
       match_type: anyCommentTriggers ? 'any' : matchType,
       public_reply: publicReply.trim() || null,
@@ -149,9 +199,33 @@ export const MyContentScreen: React.FC = () => {
     };
 
     const saved = await saveDmRule(rulePayload);
+
+    if (onSaveAutomation) {
+      onSaveAutomation({
+        id: String(rulePayload.id),
+        title: String(rulePayload.name),
+        description: `Auto-reply for Instagram post ${realPostId}`,
+        triggerType: 'comment_dm',
+        status: isActive ? 'live' : 'paused',
+        selectedPostIds: [realPostId],
+        keywords: anyCommentTriggers ? [] : keywords,
+        matchRule: anyCommentTriggers ? 'any' : matchType,
+        publicCommentReplies: publicReply.trim() ? [publicReply.trim()] : [],
+        dmMessageText: dmReply.trim(),
+        dmButtons: [{ id: 'b1', type: 'link', label: buttonLabel || 'View Details', url: buttonUrl || 'https://www.jaaga.ai' }],
+        enableFollowUp: false,
+        followUpText: '',
+        followUpDelayHours: 1,
+        conditions: { replyOncePerUser: true, requireFollowing: false, captureLead: true },
+        stats: { triggersCount: 0, dmsSent: 0, leadsCaptured: 0, ctrPercent: 0 },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
     if (saved) {
       setRules((prev) => {
-        const filtered = prev.filter((r) => r.media_id !== String(selectedPost.id));
+        const filtered = prev.filter((r) => String(r.media_id) !== realPostId);
         return [saved, ...filtered];
       });
     } else {
@@ -159,7 +233,8 @@ export const MyContentScreen: React.FC = () => {
       const fallbackRule: IGAutomationRule = {
         id: rulePayload.id || `rule_${Date.now()}`,
         type: 'comment',
-        media_id: String(selectedPost.id),
+        media_id: realPostId,
+        selected_post_ids: [realPostId],
         keywords: anyCommentTriggers ? [] : keywords,
         match_type: anyCommentTriggers ? 'any' : matchType,
         public_reply: publicReply.trim() || null,
@@ -168,7 +243,7 @@ export const MyContentScreen: React.FC = () => {
         name: `Comment DM: ${captionSnippet}`,
       };
       setRules((prev) => {
-        const filtered = prev.filter((r) => r.media_id !== String(selectedPost.id));
+        const filtered = prev.filter((r) => String(r.media_id) !== realPostId);
         return [fallbackRule, ...filtered];
       });
     }

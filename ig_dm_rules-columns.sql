@@ -23,6 +23,7 @@ alter table ig_dm_rules add column if not exists public_reply text;
 alter table ig_dm_rules add column if not exists dm_reply text;
 alter table ig_dm_rules add column if not exists active boolean default true;
 alter table ig_dm_rules add column if not exists name text;
+alter table ig_dm_rules add column if not exists selected_post_ids text[] default '{}';
 
 -- 2. Table for Instagram Messages & Unified Inbox (ig_messages)
 create table if not exists ig_messages (

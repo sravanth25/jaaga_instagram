@@ -565,10 +565,19 @@ app.post('/api/ig/dm-rules', async (req, res) => {
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   const ruleData = req.body || {};
 
+  const postIds = Array.isArray(ruleData.selected_post_ids)
+    ? ruleData.selected_post_ids.map(String).filter((id: string) => id !== 'post_1')
+    : Array.isArray(ruleData.selectedPostIds)
+    ? ruleData.selectedPostIds.map(String).filter((id: string) => id !== 'post_1')
+    : [];
+
+  const mediaId = ruleData.media_id || ruleData.mediaId || (postIds.length > 0 ? postIds[0] : null);
+
   const payload = {
     id: ruleData.id || `rule_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     type: ruleData.type || 'comment',
-    media_id: ruleData.media_id || ruleData.mediaId || null,
+    media_id: mediaId,
+    selected_post_ids: postIds,
     keywords: Array.isArray(ruleData.keywords) ? ruleData.keywords : [],
     match_type: ruleData.match_type || ruleData.matchType || 'contains',
     public_reply: ruleData.public_reply || ruleData.publicReply || null,

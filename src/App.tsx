@@ -836,7 +836,52 @@ export default function App() {
             />
           )}
 
-          {currentScreen === 'my-content' && <MyContentScreen />}
+          {currentScreen === 'my-content' && (
+            <MyContentScreen
+              automations={automations}
+              onSelectAutomationToEdit={(auto) => {
+                setAutomationToEdit(auto);
+                setCurrentScreen('builder');
+              }}
+              onSetupPostAutomation={(post) => {
+                const realPostId = String(post.id);
+                // Check if an automation already exists for this post
+                const existing = automations.find((a) =>
+                  (a.selectedPostIds || []).map(String).includes(realPostId)
+                );
+                if (existing) {
+                  setAutomationToEdit(existing);
+                } else {
+                  const captionSnippet = post.caption
+                    ? post.caption.substring(0, 30) + '...'
+                    : `Post ${realPostId}`;
+                  setAutomationToEdit({
+                    id: `rule_post_${realPostId}`,
+                    title: `Comment DM: ${captionSnippet}`,
+                    description: `Auto-replies to comments on post ${realPostId}`,
+                    triggerType: 'comment_dm',
+                    status: 'live',
+                    selectedPostIds: [realPostId],
+                    keywords: ['PROPERTY', 'INFO', 'LINK', 'PRICE', 'DEMO'],
+                    matchRule: 'contains',
+                    publicCommentReplies: ['Sent you a DM with full details! 📥', 'Check your inbox! 🚀'],
+                    dmMessageText: `Hey! 👋 Thanks for commenting on our post!\n\nHere are the details you requested:\nhttps://www.jaaga.ai`,
+                    dmButtons: [{ id: 'b1', type: 'link', label: 'View Details', url: 'https://www.jaaga.ai' }],
+                    enableFollowUp: false,
+                    followUpText: '',
+                    followUpDelayHours: 1,
+                    conditions: { replyOncePerUser: true, requireFollowing: false, captureLead: true },
+                    stats: { triggersCount: 0, dmsSent: 0, leadsCaptured: 0, ctrPercent: 0 },
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  });
+                }
+                setCurrentScreen('builder');
+              }}
+              onSaveAutomation={handleSaveAutomation}
+              onNavigate={setCurrentScreen}
+            />
+          )}
 
           {currentScreen === 'automations' && (
             <AutomationsListScreen
